@@ -106,8 +106,9 @@
     
     <div id="root"></div>
     
-    <!-- Script principal com tratamento de erro -->
-    <script type="module">
+    <!-- Script principal - Vite injeta automaticamente o script correto durante o build -->
+    <!-- Tratamento de erro global para evitar travamento -->
+    <script>
       // Tratamento de erro global para evitar travamento
       window.addEventListener('error', (event) => {
         console.error('Erro global capturado:', event.error);
@@ -121,15 +122,6 @@
       window.addEventListener('unhandledrejection', (event) => {
         console.error('Promise rejeitada:', event.reason);
         // Não bloquear a aplicação, apenas logar
-      });
-      
-      // Carregar aplicação
-      import('/src/main.tsx').catch((error) => {
-        console.error('Erro ao carregar aplicação:', error);
-        const loading = document.getElementById('loading-fallback');
-        if (loading) {
-          loading.innerHTML = '<div style="text-align: center; padding: 20px;"><h2>Erro ao carregar aplicação</h2><p>Por favor, recarregue a página.</p><button onclick="location.reload()" style="padding: 10px 20px; background: white; color: #10b981; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px;">Recarregar</button></div>';
-        }
       });
     </script>
     
