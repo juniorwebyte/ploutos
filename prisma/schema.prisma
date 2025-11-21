@@ -3,8 +3,13 @@ generator client {
 }
 
 datasource db {
+  // Para mudar o provider, configure DATABASE_PROVIDER no .env
+  // Opções: "sqlite", "postgresql", "mysql"
+  // Para SQLite: DATABASE_URL="file:./prisma/dev.db"
+  // Para PostgreSQL: DATABASE_URL="postgresql://user:pass@host:5432/db"
+  // Para MySQL: DATABASE_URL="mysql://user:pass@host:3306/db"
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 model User {

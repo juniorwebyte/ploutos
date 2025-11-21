@@ -19,11 +19,9 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
+    "strictFunctionTypes": true
   },
   "include": ["src"]
 }

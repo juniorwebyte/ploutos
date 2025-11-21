@@ -1,0 +1,13 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Schema para produção com PostgreSQL
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Copiar todos os models do schema.prisma aqui quando usar PostgreSQL em produção
+// Ou usar o schema.prisma diretamente mudando apenas o datasource
+

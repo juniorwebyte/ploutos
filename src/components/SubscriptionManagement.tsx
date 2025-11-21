@@ -23,20 +23,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
-// Em produção (Vercel), não tentar conectar a localhost
-const getApiBase = (): string => {
-  if (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
-  }
-  // Apenas tentar localhost se estiver em desenvolvimento
-  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    return window.location.origin.replace(/:\d+$/, ':4000');
-  }
-  // Em produção, retornar string vazia (modo offline)
-  return '';
-};
-
-const API_BASE = getApiBase();
+const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin.replace(/:\d+$/, ':4000') : 'http://localhost:4000');
 
 interface Subscription {
   id: string;

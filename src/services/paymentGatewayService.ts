@@ -197,17 +197,6 @@ class PaymentGatewayService {
     this.initializeStorage();
   }
 
-  // Obter URL base da aplicação (funciona em localhost e produção)
-  private getBaseUrl(path: string = ''): string {
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}${path}`;
-    }
-    // Fallback para variáveis de ambiente ou localhost
-    return import.meta.env.VITE_APP_URL 
-      ? `${import.meta.env.VITE_APP_URL}${path}`
-      : `http://localhost:5173${path}`;
-  }
-
   // Inicializar armazenamento local
   private initializeStorage() {
     if (!localStorage.getItem(this.storageKey)) {
@@ -570,13 +559,13 @@ class PaymentGatewayService {
       webhook_url: chargeData.webhook_url,
       metadata: chargeData.metadata,
       description: chargeData.description,
-      receipt_url: this.getBaseUrl(`/pay/${linkinvoiceId}`),
+      receipt_url: `http://localhost:5173/pay/${linkinvoiceId}`,
       crypto_address: isCrypto ? this.generateCryptoAddress(chargeData.payment_method) : undefined,
       crypto_amount: isCrypto ? this.convertToCrypto(chargeData.amount, chargeData.payment_method) : undefined,
       confirmation_count: isCrypto ? 0 : undefined,
       required_confirmations: isCrypto ? this.getRequiredConfirmations(chargeData.payment_method) : undefined,
       // LinkInvoice específico
-      linkinvoice_url: this.getBaseUrl(`/pay/${linkinvoiceId}`),
+      linkinvoice_url: `http://localhost:5173/pay/${linkinvoiceId}`,
       linkinvoice_id: linkinvoiceId,
       qr_code_pix: isPix ? this.generatePixQRCode(chargeData.amount) : undefined,
       qr_code_crypto: isCrypto ? this.generateCryptoQRCode(chargeData.payment_method, chargeData.amount) : undefined,
@@ -629,9 +618,8 @@ class PaymentGatewayService {
     const cryptoAmount = this.convertToCrypto(amount, type);
     const linkinvoiceId = `li_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // QR Code contendo endereço, valor e URL
-    const baseUrl = this.getBaseUrl();
-    const qrData = `${type.toUpperCase()}:${address}?amount=${cryptoAmount}&label=PloutosLedger|URL:${baseUrl}/pay/${linkinvoiceId}`;
+    // QR Code contendo endereço, valor e URL local
+    const qrData = `${type.toUpperCase()}:${address}?amount=${cryptoAmount}&label=PloutosLedger|URL:http://localhost:5173/pay/${linkinvoiceId}`;
     
     // Usar QR Server API para gerar QR code real
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrData)}`;
@@ -696,7 +684,7 @@ class PaymentGatewayService {
           '4. Digite sua senha ou biometria',
           '5. Aguarde processamento (2-3 dias úteis)'
         ],
-        payment_url: this.getBaseUrl(`/pay/card/${Date.now()}`),
+        payment_url: `http://localhost:5173/pay/card/${Date.now()}`,
         expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         additional_info: 'Aceitamos Visa, Mastercard e Elo. Pagamento seguro com criptografia SSL.'
       };
@@ -712,7 +700,7 @@ class PaymentGatewayService {
           '4. Aguarde compensação (3 dias úteis)',
           '5. Você receberá confirmação por email'
         ],
-        payment_url: this.getBaseUrl(`/pay/boleto/${Date.now()}`),
+        payment_url: `http://localhost:5173/pay/boleto/${Date.now()}`,
         expires_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
         additional_info: 'Boleto válido por 3 dias úteis. Pode ser pago em qualquer banco.'
       };
@@ -1190,9 +1178,8 @@ class PaymentGatewayService {
       txid: `ploutos_${Date.now()}`
     };
     
-    // QR Code com dados PIX reais e URL
-    const baseUrl = this.getBaseUrl();
-    const qrText = `PIX:${JSON.stringify(pixData)}|URL:${baseUrl}/pay/li_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // QR Code com dados PIX reais e URL local
+    const qrText = `PIX:${JSON.stringify(pixData)}|URL:http://localhost:5173/pay/li_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrText)}`;
     
     return qrUrl;

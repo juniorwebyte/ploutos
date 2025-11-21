@@ -149,28 +149,12 @@ export interface NFE {
 }
 
 class PDVService {
-  // Em produção (Vercel), não tentar conectar a localhost
-  private baseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 
-    (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ? 'http://localhost:4000' 
-      : ''); // String vazia em produção = modo offline
+  private baseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
   // Produtos
   async getProducts(): Promise<Product[]> {
-    // Se não há baseUrl (produção sem backend), usar dados mock
-    if (!this.baseUrl || this.baseUrl.trim() === '') {
-      return this.getMockProducts();
-    }
-
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // Timeout de 3s
-      
-      const response = await fetch(`${this.baseUrl}/api/pdv/products`, {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
+      const response = await fetch(`${this.baseUrl}/api/pdv/products`);
       if (!response.ok) throw new Error('Falha ao carregar produtos');
       return await response.json();
     } catch (error) {

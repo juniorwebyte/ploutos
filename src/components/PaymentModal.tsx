@@ -181,11 +181,7 @@ Por favor, confirme o recebimento e envie as instruções de acesso.`;
         } catch {}
       }
       if (formData.email) {
-        const activationLink = typeof window !== 'undefined' 
-          ? window.location.origin 
-          : (import.meta.env.VITE_APP_DOMAIN 
-            ? `${import.meta.env.VITE_APP_PROTOCOL || 'https'}://${import.meta.env.VITE_APP_DOMAIN}` 
-            : '');
+        const activationLink = typeof window !== 'undefined' ? window.location.origin : (import.meta.env.VITE_APP_DOMAIN ? `${import.meta.env.VITE_APP_PROTOCOL || 'https'}://${import.meta.env.VITE_APP_DOMAIN}` : 'http://localhost:5173');
         const payload = { name: formData.name, plan: selectedPlan?.name || 'Teste', txid: cobranca.txid, activationLink };
         const ok = await emailService.sendWelcomeEmail(formData.email, payload);
         try {

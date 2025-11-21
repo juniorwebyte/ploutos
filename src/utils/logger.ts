@@ -1,69 +1,95 @@
 /**
- * Sistema de logging otimizado para produção
- * Remove console.logs em produção e mantém apenas erros importantes
+ * Sistema de Logging Estruturado
+ * Substitui console.log por sistema de logging adequado
  */
 
-const isDevelopment = import.meta.env.DEV || process.env.NODE_ENV === 'development';
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+interface LogEntry {
+  level: LogLevel;
+  message: string;
+  timestamp: string;
+  context?: Record<string, any>;
+  error?: Error;
+}
 
 class Logger {
-  private shouldLog(level: 'log' | 'warn' | 'error' | 'info'): boolean {
-    // Em produção, apenas erros são logados
-    if (!isDevelopment) {
-      return level === 'error';
-    }
-    return true;
-  }
+  private isDevelopment = import.meta.env.DEV || process.env.NODE_ENV === 'development';
+  private logLevel: LogLevel = (import.meta.env.VITE_LOG_LEVEL || process.env.LOG_LEVEL || 'info') as LogLevel;
 
-  log(...args: any[]): void {
-    if (this.shouldLog('log')) {
-      console.log(...args);
-    }
-  }
-
-  info(...args: any[]): void {
-    if (this.shouldLog('info')) {
-      console.info(...args);
-    }
-  }
-
-  warn(...args: any[]): void {
-    if (this.shouldLog('warn')) {
-      console.warn(...args);
-    }
-  }
-
-  error(...args: any[]): void {
-    // Erros sempre são logados
-    console.error(...args);
+  private shouldLog(level: LogLevel): boolean {
+    if (!this.isDevelopment && level === 'debug') return false;
     
-    // Em produção, pode enviar para serviço de monitoramento
-    if (!isDevelopment && typeof window !== 'undefined') {
-      // Aqui você pode adicionar integração com Sentry, LogRocket, etc.
-      // Exemplo: Sentry.captureException(new Error(args.join(' ')));
+    const levels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+    const currentLevelIndex = levels.indexOf(this.logLevel);
+    const messageLevelIndex = levels.indexOf(level);
+    
+    return messageLevelIndex >= currentLevelIndex;
+  }
+
+  private formatMessage(entry: LogEntry): string {
+    const timestamp = new Date(entry.timestamp).toISOString();
+    const contextStr = entry.context ? ` ${JSON.stringify(entry.context)}` : '';
+    const errorStr = entry.error ? ` Error: ${entry.error.message}` : '';
+    
+    return `[${timestamp}] [${entry.level.toUpperCase()}] ${entry.message}${contextStr}${errorStr}`;
+  }
+
+  private log(level: LogLevel, message: string, context?: Record<string, any>, error?: Error) {
+    if (!this.shouldLog(level)) return;
+
+    const entry: LogEntry = {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+      context,
+      error,
+    };
+
+    const formattedMessage = this.formatMessage(entry);
+
+    switch (level) {
+      case 'debug':
+        console.debug(formattedMessage);
+        break;
+      case 'info':
+        console.info(formattedMessage);
+        break;
+      case 'warn':
+        console.warn(formattedMessage);
+        break;
+      case 'error':
+        console.error(formattedMessage, error);
+        break;
+    }
+
+    // Em produção, enviar para serviço de logging (ex: Sentry, LogRocket)
+    if (!this.isDevelopment && (level === 'error' || level === 'warn')) {
+      // TODO: Integrar com serviço de logging em produção
+      // this.sendToLoggingService(entry);
     }
   }
 
-  // Método para debug (apenas em desenvolvimento)
-  debug(...args: any[]): void {
-    if (isDevelopment) {
-      console.debug('[DEBUG]', ...args);
-    }
+  debug(message: string, context?: Record<string, any>) {
+    this.log('debug', message, context);
   }
 
-  // Método para performance (apenas em desenvolvimento)
-  performance(label: string, fn: () => void): void {
-    if (isDevelopment && typeof performance !== 'undefined') {
-      performance.mark(`${label}-start`);
-      fn();
-      performance.mark(`${label}-end`);
-      performance.measure(label, `${label}-start`, `${label}-end`);
-      const measure = performance.getEntriesByName(label)[0];
-      console.log(`[PERF] ${label}: ${measure.duration.toFixed(2)}ms`);
-    } else {
-      fn();
-    }
+  info(message: string, context?: Record<string, any>) {
+    this.log('info', message, context);
+  }
+
+  warn(message: string, context?: Record<string, any>) {
+    this.log('warn', message, context);
+  }
+
+  error(message: string, error?: Error, context?: Record<string, any>) {
+    this.log('error', message, context, error);
   }
 }
 
+// Exportar instância singleton
 export const logger = new Logger();
-export default logger;
+
+// Exportar classe para casos especiais
+export default Logger;
+

@@ -23,59 +23,32 @@ const LoadingFallback = () => (
   </div>
 );
 
-// Remove loading fallback quando a aplicação carrega
+// Remove loading inline do HTML quando a aplicação carrega
 const rootElement = document.getElementById('root');
-const loadingFallback = document.getElementById('loading-fallback');
-
 if (rootElement) {
-  // Função para remover loading fallback
-  const removeLoadingFallback = () => {
-    // Marcar app como carregado
-    document.body.classList.add('app-loaded');
-    
-    // Remover loading fallback após um pequeno delay para transição suave
-    if (loadingFallback) {
-      loadingFallback.style.opacity = '0';
-      loadingFallback.style.transition = 'opacity 0.3s ease-out';
-      setTimeout(() => {
-        if (loadingFallback.parentNode) {
-          loadingFallback.parentNode.removeChild(loadingFallback);
-        }
-      }, 300);
+  // Remove loading após a aplicação iniciar
+  const removeInlineLoading = () => {
+    rootElement.classList.add('loaded');
+    // Remove estilos inline de loading após React carregar
+    const inlineStyle = document.querySelector('style');
+    if (inlineStyle && inlineStyle.textContent?.includes('#root::before')) {
+      // Adiciona regra CSS para ocultar o loading quando a classe 'loaded' está presente
+      const style = document.createElement('style');
+      style.textContent = '#root.loaded::before, #root.loaded::after { display: none !important; }';
+      document.head.appendChild(style);
     }
   };
 
-  try {
-    createRoot(rootElement).render(
-      <StrictMode>
-        <ErrorBoundary>
-          <Suspense fallback={<LoadingFallback />}>
-            <App />
-          </Suspense>
-        </ErrorBoundary>
-      </StrictMode>
-    );
+  createRoot(rootElement).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <Suspense fallback={<LoadingFallback />}>
+          <App />
+        </Suspense>
+      </ErrorBoundary>
+    </StrictMode>
+  );
 
-    // Remove loading após React carregar (aumentado para garantir que renderizou)
-    // Usar requestAnimationFrame para garantir que o DOM foi atualizado
-    requestAnimationFrame(() => {
-      setTimeout(removeLoadingFallback, 200);
-    });
-  } catch (error) {
-    console.error('Erro ao inicializar React:', error);
-    // Mostrar erro ao usuário
-    if (loadingFallback) {
-      loadingFallback.innerHTML = `
-        <div style="text-align: center; padding: 20px;">
-          <h2 style="color: white; margin-bottom: 10px;">Erro ao carregar aplicação</h2>
-          <p style="color: rgba(255,255,255,0.9); margin-bottom: 20px;">Por favor, recarregue a página.</p>
-          <button onclick="location.reload()" style="padding: 10px 20px; background: white; color: #10b981; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-            Recarregar Página
-          </button>
-        </div>
-      `;
-    }
-  }
-} else {
-  console.error('Elemento #root não encontrado');
+  // Remove loading após React carregar
+  setTimeout(removeInlineLoading, 100);
 }

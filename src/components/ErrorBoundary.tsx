@@ -23,37 +23,29 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log detalhado do erro (usar logger quando disponível)
-    const errorDetails = {
+    // Log detalhado do erro
+    console.error('ErrorBoundary capturou um erro:', {
       error,
       errorInfo,
       componentStack: errorInfo.componentStack,
       timestamp: new Date().toISOString(),
-    };
-    
-    // Usar console.error diretamente aqui pois logger pode não estar disponível ainda
-    if (typeof console !== 'undefined' && console.error) {
-      console.error('ErrorBoundary capturou um erro:', errorDetails);
-    }
+    });
 
     // Salvar erro no localStorage para análise posterior (apenas em desenvolvimento)
-    // Com tratamento seguro de erro
-    if (process.env.NODE_ENV === 'development' || import.meta.env.DEV) {
+    if (process.env.NODE_ENV === 'development') {
       try {
-        if (typeof localStorage !== 'undefined') {
-          const errorLogs = JSON.parse(localStorage.getItem('errorLogs') || '[]');
-          errorLogs.push({
-            error: error.message,
-            stack: error.stack,
-            componentStack: errorInfo.componentStack,
-            timestamp: new Date().toISOString(),
-          });
-          // Manter apenas os últimos 10 erros
-          const recentLogs = errorLogs.slice(-10);
-          localStorage.setItem('errorLogs', JSON.stringify(recentLogs));
-        }
+        const errorLogs = JSON.parse(localStorage.getItem('errorLogs') || '[]');
+        errorLogs.push({
+          error: error.message,
+          stack: error.stack,
+          componentStack: errorInfo.componentStack,
+          timestamp: new Date().toISOString(),
+        });
+        // Manter apenas os últimos 10 erros
+        const recentLogs = errorLogs.slice(-10);
+        localStorage.setItem('errorLogs', JSON.stringify(recentLogs));
       } catch (e) {
-        // Falha silenciosa ao salvar logs (localStorage pode estar bloqueado)
+        // Falha silenciosa ao salvar logs
       }
     }
 

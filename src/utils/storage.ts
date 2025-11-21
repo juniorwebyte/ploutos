@@ -1,14 +1,24 @@
 /**
- * Utilitário seguro para localStorage
- * Trata erros de quota, bloqueio, etc.
+ * Utilitário centralizado para gerenciamento de localStorage
+ * com tratamento de erros, validação e sincronização
  */
 
-class SafeStorage {
+interface StorageOptions {
+  defaultValue?: any;
+  validator?: (value: any) => boolean;
+  serializer?: (value: any) => string;
+  deserializer?: (value: string) => any;
+}
+
+class StorageManager {
+  private listeners: Map<string, Set<(value: any) => void>> = new Map();
+  private cache: Map<string, any> = new Map();
+
+  /**
+   * Verifica se localStorage está disponível
+   */
   private isAvailable(): boolean {
     try {
-      if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
-        return false;
-      }
       const test = '__storage_test__';
       localStorage.setItem(test, test);
       localStorage.removeItem(test);
@@ -18,129 +28,203 @@ class SafeStorage {
     }
   }
 
-  getItem(key: string): string | null {
+  /**
+   * Obtém valor do localStorage com cache e tratamento de erros
+   */
+  get<T>(key: string, options: StorageOptions = {}): T | null {
     if (!this.isAvailable()) {
-      return null;
+      console.warn(`localStorage não disponível para chave: ${key}`);
+      return options.defaultValue ?? null;
     }
-    
-    try {
-      return localStorage.getItem(key);
-    } catch (error) {
-      console.warn(`Erro ao ler localStorage para chave "${key}":`, error);
-      return null;
-    }
-  }
 
-  setItem(key: string, value: string): boolean {
-    if (!this.isAvailable()) {
-      return false;
+    // Verificar cache primeiro
+    if (this.cache.has(key)) {
+      return this.cache.get(key) as T;
     }
-    
+
     try {
-      localStorage.setItem(key, value);
-      return true;
-    } catch (error: any) {
-      // Tratar erro de quota excedida
-      if (error.name === 'QuotaExceededError' || error.code === 22) {
-        console.warn('localStorage quota excedida. Tentando limpar cache antigo...');
-        // Tentar limpar itens antigos
-        this.clearOldItems();
-        try {
-          localStorage.setItem(key, value);
-          return true;
-        } catch (retryError) {
-          console.error('Erro ao salvar após limpeza:', retryError);
-          return false;
-        }
+      const item = localStorage.getItem(key);
+      if (item === null) {
+        return options.defaultValue ?? null;
       }
-      console.warn(`Erro ao salvar no localStorage para chave "${key}":`, error);
+
+      const deserializer = options.deserializer || JSON.parse;
+      const value = deserializer(item);
+
+      // Validar se necessário
+      if (options.validator && !options.validator(value)) {
+        console.warn(`Valor inválido para chave ${key}, usando valor padrão`);
+        return options.defaultValue ?? null;
+      }
+
+      // Cachear valor
+      this.cache.set(key, value);
+      return value as T;
+    } catch (error) {
+      console.error(`Erro ao ler localStorage para chave ${key}:`, error);
+      return options.defaultValue ?? null;
+    }
+  }
+
+  /**
+   * Salva valor no localStorage com validação e sincronização
+   */
+  set<T>(key: string, value: T, options: StorageOptions = {}): boolean {
+    if (!this.isAvailable()) {
+      console.warn(`localStorage não disponível para chave: ${key}`);
+      return false;
+    }
+
+    try {
+      // Validar se necessário
+      if (options.validator && !options.validator(value)) {
+        console.error(`Valor inválido para chave ${key}`);
+        return false;
+      }
+
+      const serializer = options.serializer || JSON.stringify;
+      const serialized = serializer(value);
+      
+      localStorage.setItem(key, serialized);
+      
+      // Atualizar cache
+      this.cache.set(key, value);
+      
+      // Notificar listeners
+      this.notifyListeners(key, value);
+      
+      return true;
+    } catch (error) {
+      console.error(`Erro ao salvar localStorage para chave ${key}:`, error);
+      
+      // Tentar limpar cache se houver erro
+      this.cache.delete(key);
+      
       return false;
     }
   }
 
-  removeItem(key: string): boolean {
+  /**
+   * Remove valor do localStorage
+   */
+  remove(key: string): boolean {
     if (!this.isAvailable()) {
       return false;
     }
-    
+
     try {
       localStorage.removeItem(key);
+      this.cache.delete(key);
+      this.notifyListeners(key, null);
       return true;
     } catch (error) {
-      console.warn(`Erro ao remover do localStorage para chave "${key}":`, error);
+      console.error(`Erro ao remover localStorage para chave ${key}:`, error);
       return false;
     }
   }
 
+  /**
+   * Limpa todo o localStorage (cuidado!)
+   */
   clear(): boolean {
     if (!this.isAvailable()) {
       return false;
     }
-    
+
     try {
       localStorage.clear();
+      this.cache.clear();
       return true;
     } catch (error) {
-      console.warn('Erro ao limpar localStorage:', error);
+      console.error('Erro ao limpar localStorage:', error);
       return false;
     }
   }
 
-  private clearOldItems(): void {
-    try {
-      // Limpar itens de cache antigos (mais de 7 dias)
-      const now = Date.now();
-      const keysToRemove: string[] = [];
-      
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('cache_')) {
-          try {
-            const item = localStorage.getItem(key);
-            if (item) {
-              const data = JSON.parse(item);
-              if (data.timestamp && (now - data.timestamp) > 7 * 24 * 60 * 60 * 1000) {
-                keysToRemove.push(key);
-              }
-            }
-          } catch {
-            // Se não conseguir parsear, remover
-            keysToRemove.push(key);
-          }
-        }
-      }
-      
-      keysToRemove.forEach(key => localStorage.removeItem(key));
-    } catch (error) {
-      console.warn('Erro ao limpar itens antigos:', error);
-    }
-  }
-
-  // Métodos auxiliares para JSON
-  getJSON<T>(key: string, defaultValue: T | null = null): T | null {
-    const item = this.getItem(key);
-    if (item === null) {
-      return defaultValue;
+  /**
+   * Inscreve-se em mudanças de uma chave específica
+   */
+  subscribe(key: string, callback: (value: any) => void): () => void {
+    if (!this.listeners.has(key)) {
+      this.listeners.set(key, new Set());
     }
     
-    try {
-      return JSON.parse(item) as T;
-    } catch (error) {
-      console.warn(`Erro ao parsear JSON para chave "${key}":`, error);
-      return defaultValue;
+    this.listeners.get(key)!.add(callback);
+    
+    // Retornar função de unsubscribe
+    return () => {
+      const listeners = this.listeners.get(key);
+      if (listeners) {
+        listeners.delete(callback);
+        if (listeners.size === 0) {
+          this.listeners.delete(key);
+        }
+      }
+    };
+  }
+
+  /**
+   * Notifica todos os listeners de uma chave
+   */
+  private notifyListeners(key: string, value: any): void {
+    const listeners = this.listeners.get(key);
+    if (listeners) {
+      listeners.forEach(callback => {
+        try {
+          callback(value);
+        } catch (error) {
+          console.error(`Erro ao executar listener para chave ${key}:`, error);
+        }
+      });
     }
   }
 
-  setJSON<T>(key: string, value: T): boolean {
-    try {
-      const json = JSON.stringify(value);
-      return this.setItem(key, json);
-    } catch (error) {
-      console.warn(`Erro ao serializar JSON para chave "${key}":`, error);
-      return false;
+  /**
+   * Sincroniza dados entre abas usando storage event
+   */
+  sync(): void {
+    if (!this.isAvailable()) {
+      return;
     }
+
+    window.addEventListener('storage', (e: StorageEvent) => {
+      if (e.key && e.newValue !== null) {
+        try {
+          const value = JSON.parse(e.newValue);
+          this.cache.set(e.key, value);
+          this.notifyListeners(e.key, value);
+        } catch (error) {
+          console.error(`Erro ao sincronizar chave ${e.key}:`, error);
+        }
+      } else if (e.key) {
+        this.cache.delete(e.key);
+        this.notifyListeners(e.key, null);
+      }
+    });
+  }
+
+  /**
+   * Limpa cache (útil para forçar recarregamento)
+   */
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+  /**
+   * Limpa cache de uma chave específica
+   */
+  clearCacheKey(key: string): void {
+    this.cache.delete(key);
   }
 }
 
-export const safeStorage = new SafeStorage();
-export default safeStorage;
+// Instância singleton
+const storageManager = new StorageManager();
+
+// Inicializar sincronização entre abas
+if (typeof window !== 'undefined') {
+  storageManager.sync();
+}
+
+export default storageManager;
+

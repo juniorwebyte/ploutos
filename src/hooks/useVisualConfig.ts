@@ -1,10 +1,27 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 
 export const useVisualConfig = () => {
-  const aplicarLogo = useCallback((logoDataUrl: string) => {
-    // Aplicar logo em elementos com classe company-logo
-    if (typeof window === 'undefined') return;
+  useEffect(() => {
+    // Carregar configurações visuais ao inicializar o sistema
+    carregarConfiguracoesVisuais();
+  }, []);
+
+  const carregarConfiguracoesVisuais = () => {
+    // Carregar logo salva
+    const logoSaved = localStorage.getItem('companyLogo');
+    if (logoSaved) {
+      aplicarLogo(logoSaved);
+    }
     
+    // Carregar favicon salvo
+    const faviconSaved = localStorage.getItem('companyFavicon');
+    if (faviconSaved) {
+      aplicarFavicon(faviconSaved);
+    }
+  };
+
+  const aplicarLogo = (logoDataUrl: string) => {
+    // Aplicar logo em elementos com classe company-logo
     const logoElements = document.querySelectorAll('.company-logo') as NodeListOf<HTMLImageElement>;
     logoElements.forEach(element => {
       element.src = logoDataUrl;
@@ -15,12 +32,10 @@ export const useVisualConfig = () => {
     if (headerLogo) {
       headerLogo.src = logoDataUrl;
     }
-  }, []);
+  };
 
-  const aplicarFavicon = useCallback((faviconDataUrl: string) => {
+  const aplicarFavicon = (faviconDataUrl: string) => {
     // Aplicar favicon dinamicamente
-    if (typeof window === 'undefined') return;
-    
     const favicon = document.querySelector('link[rel="icon"]') as HTMLLinkElement;
     if (favicon) {
       favicon.href = faviconDataUrl;
@@ -31,54 +46,17 @@ export const useVisualConfig = () => {
       newFavicon.href = faviconDataUrl;
       document.head.appendChild(newFavicon);
     }
-  }, []);
+  };
 
-  const carregarConfiguracoesVisuais = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      // Carregar logo salva
-      const logoSaved = localStorage.getItem('companyLogo');
-      if (logoSaved) {
-        aplicarLogo(logoSaved);
-      }
-      
-      // Carregar favicon salvo
-      const faviconSaved = localStorage.getItem('companyFavicon');
-      if (faviconSaved) {
-        aplicarFavicon(faviconSaved);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar configurações visuais:', error);
-    }
-  }, [aplicarLogo, aplicarFavicon]);
+  const salvarLogo = (logoDataUrl: string) => {
+    localStorage.setItem('companyLogo', logoDataUrl);
+    aplicarLogo(logoDataUrl);
+  };
 
-  useEffect(() => {
-    // Carregar configurações visuais ao inicializar o sistema
-    carregarConfiguracoesVisuais();
-  }, [carregarConfiguracoesVisuais]);
-
-  const salvarLogo = useCallback((logoDataUrl: string) => {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      localStorage.setItem('companyLogo', logoDataUrl);
-      aplicarLogo(logoDataUrl);
-    } catch (error) {
-      console.error('Erro ao salvar logo:', error);
-    }
-  }, [aplicarLogo]);
-
-  const salvarFavicon = useCallback((faviconDataUrl: string) => {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      localStorage.setItem('companyFavicon', faviconDataUrl);
-      aplicarFavicon(faviconDataUrl);
-    } catch (error) {
-      console.error('Erro ao salvar favicon:', error);
-    }
-  }, [aplicarFavicon]);
+  const salvarFavicon = (faviconDataUrl: string) => {
+    localStorage.setItem('companyFavicon', faviconDataUrl);
+    aplicarFavicon(faviconDataUrl);
+  };
 
   return {
     carregarConfiguracoesVisuais,

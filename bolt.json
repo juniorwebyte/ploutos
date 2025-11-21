@@ -1,0 +1,29 @@
+{
+  "name": "ploutos-ledger",
+  "version": "3.0.0",
+  "description": "PloutosLedger - Sistema completo de gestão financeira e controle de notas fiscais",
+  "type": "application",
+  "scripts": {
+    "build": "npm run build && npm run server:build && npx prisma generate",
+    "start": "npm run start:prod",
+    "dev": "npm run dev"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.18.0",
+    "express": "^4.19.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "4000"
+  },
+  "build": {
+    "command": "npm install && npm run build && npm run server:build && npx prisma generate",
+    "output": "dist"
+  },
+  "runtime": {
+    "node": "18.x"
+  }
+}
+

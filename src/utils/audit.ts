@@ -105,7 +105,7 @@ export class AuditLogger {
       // Em produção, o IP será obtido pelo backend via headers
       return 'client-side';
     }
-    return 'unknown';
+    return '127.0.0.1';
   }
 }
 

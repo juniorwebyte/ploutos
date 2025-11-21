@@ -292,7 +292,7 @@ class SecurityService {
       details,
       userAgent: navigator.userAgent,
       url: window.location.href,
-      ip: typeof window !== 'undefined' ? 'client-side' : 'unknown' // Será obtido pelo backend em produção
+      ip: typeof window !== 'undefined' ? 'client-side' : '127.0.0.1' // Será obtido pelo backend em produção
     };
 
     try {

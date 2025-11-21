@@ -11,18 +11,12 @@ export default defineConfig({
       include: '**/*.{jsx,tsx}',
     }),
   ],
-  base: '/',
-  // Garantir que o index.html seja processado corretamente
-  root: '.',
-  publicDir: 'public',
   build: {
     // Otimizações de build para melhor performance
     target: 'esnext',
-    minify: 'esbuild', // Sempre minificar em build (Vercel sempre faz build de produção)
-    sourcemap: false, // Desabilitar sourcemaps em produção para melhor performance
+    minify: process.env.NODE_ENV === 'production' ? 'esbuild' : false,
+    sourcemap: process.env.NODE_ENV === 'production' ? false : true,
     cssCodeSplit: true,
-    // Garantir que o build não falhe por tamanho de chunk
-    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
         // Chunking strategy otimizado
@@ -81,11 +75,11 @@ export default defineConfig({
         assetFileNames: 'assets/[ext]/[name]-[hash].[ext]',
       },
     },
+    // Limite de avisos de chunk size
+    chunkSizeWarningLimit: 1000,
     // Otimizações adicionais
     reportCompressedSize: false,
     emptyOutDir: true,
-    // Garantir que assets sejam copiados corretamente
-    assetsInlineLimit: 4096,
   },
   optimizeDeps: {
     // Incluir dependências que precisam ser pré-empacotadas

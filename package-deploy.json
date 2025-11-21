@@ -1,0 +1,22 @@
+{
+  "name": "ploutos-ledger-deploy",
+  "version": "3.0.0",
+  "description": "Scripts e configurações de deploy para PloutosLedger",
+  "scripts": {
+    "deploy:vps": "bash scripts/deploy-vps.sh",
+    "deploy:build": "bash scripts/build-prod.sh",
+    "deploy:docker": "docker-compose up -d",
+    "deploy:docker:build": "docker-compose build",
+    "deploy:docker:down": "docker-compose down",
+    "deploy:backup": "bash scripts/backup-db.sh",
+    "deploy:postgres": "bash scripts/setup-postgres.sh",
+    "deploy:migrate": "bash scripts/migrate-to-postgres.sh",
+    "deploy:update-schema": "bash scripts/update-prisma-schema.sh",
+    "deploy:vercel": "vercel --prod",
+    "deploy:vercel:dev": "vercel",
+    "postbuild": "npx prisma generate && npm run server:build",
+    "predeploy": "npm run build && npm run server:build && npx prisma generate",
+    "deploy:full": "npm run predeploy && npm run deploy:backup && npm run start:prod"
+  }
+}
+

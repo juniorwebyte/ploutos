@@ -1,42 +1,80 @@
-# Arquivos e pastas a ignorar no deploy da Vercel
+# Arquivos e pastas a ignorar no deploy Vercel
 
-# Dependências (já instaladas pela Vercel)
+# Dependências
 node_modules/
+.pnp
+.pnp.js
 
-# Arquivos de desenvolvimento
-.env.local
-.env.development
-.env.test
-
-# Arquivos de build local
+# Build local
 dist/
 dist-server/
 build/
+.vite/
 
-# Arquivos de configuração local
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Ambiente local
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor
 .vscode/
 .idea/
-*.log
-*.log.*
-
-# Banco de dados local
-prisma/dev.db
-prisma/dev.db-journal
-*.db
-*.db-journal
-
-# Arquivos temporários
-.DS_Store
-Thumbs.db
 *.swp
 *.swo
 *~
 
+# OS
+.DS_Store
+Thumbs.db
+
+# Servidor (não necessário para frontend)
+server/
+prisma/
+ecosystem.config.js
+package-server.json
+server-simple.js
+start-server.bat
+iniciar-servidor.ps1
+setup-git.ps1
+
 # Scripts de deploy local
 deploy.sh
-ecosystem.config.js
+DEPLOY.md
+DEPLOY_VPS.md
 
-# Arquivos de servidor (não necessários para frontend estático)
-server/
-server-simple.js
-package-server.json
+# Documentação
+doc/
+*.md
+!README.md
+
+# Arquivos temporários
+*.zip
+*.tmp
+*.temp
+
+# Configurações locais
+cms-config.json
+prisma.config.json
+prisma.config.ts
+
+# Banco de dados local
+*.db
+*.db-journal
+
+# Outros
+new_theme/
+AUDITORIA*.md
+MELHORIAS*.md
+LEIA-ME-SERVIDOR.md
+LICENSE
+

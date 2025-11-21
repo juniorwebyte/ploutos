@@ -15,30 +15,15 @@ class BackendService {
   private lastCheckTs = 0;
   private cachedOnline: boolean | null = null;
   private readonly ttlMs = 15_000; // 15s
-  // Em produção (Vercel), não tentar conectar a localhost
-  private readonly baseUrl = import.meta.env.VITE_API_BASE_URL || 
-    (typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-      ? 'http://localhost:4000' 
-      : ''); // String vazia em produção = modo offline
-  private readonly defaultTimeout = 5000; // Reduzido para 5 segundos
-  private readonly defaultRetries = 1; // Reduzido para 1 tentativa em produção
+  private readonly baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+  private readonly defaultTimeout = 10000; // 10 segundos
+  private readonly defaultRetries = 3;
   private readonly defaultRetryDelay = 1000; // 1 segundo
 
   /**
    * Verifica se o backend está online
-   * Em produção (Vercel), sempre retorna false para usar modo offline
    */
   async isOnline(force = false): Promise<boolean> {
-    // Se não há baseUrl configurada (produção sem backend), sempre offline
-    if (!this.baseUrl || this.baseUrl.trim() === '') {
-      return false;
-    }
-
-    // Se não é localhost, assumir que está em produção e não tentar conectar
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return false;
-    }
-
     const now = Date.now();
     if (!force && this.cachedOnline !== null && now - this.lastCheckTs < this.ttlMs) {
       return this.cachedOnline;
@@ -46,22 +31,18 @@ class BackendService {
     
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000); // Timeout reduzido para 2s
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // Timeout de 3s para health check
       
       const res = await fetch(`${this.baseUrl}/health`, { 
         cache: 'no-store',
         signal: controller.signal,
-        mode: 'cors',
       });
       
       clearTimeout(timeoutId);
       this.cachedOnline = res.ok;
     } catch (error) {
       this.cachedOnline = false;
-      // Backend não disponível - usar modo local (não logar erro em produção)
-      if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-        // Apenas logar em desenvolvimento
-      }
+      // Backend não disponível - usar modo local
     }
     
     this.lastCheckTs = now;
@@ -75,25 +56,6 @@ class BackendService {
     endpoint: string,
     options: RequestOptions = {}
   ): Promise<ApiResponse<T>> {
-    // Se não há baseUrl (produção sem backend), retornar erro silencioso
-    // O sistema deve funcionar offline usando localStorage
-    if (!this.baseUrl || this.baseUrl.trim() === '') {
-      return {
-        data: null as T,
-        status: 0,
-        error: 'Backend não configurado - usando modo offline'
-      };
-    }
-
-    // Se não é localhost, não tentar conectar (modo offline)
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return {
-        data: null as T,
-        status: 0,
-        error: 'Modo offline - backend não disponível em produção'
-      };
-    }
-
     const {
       timeout = this.defaultTimeout,
       retries = this.defaultRetries,
@@ -117,7 +79,6 @@ class BackendService {
             'Content-Type': 'application/json',
             ...fetchOptions.headers,
           },
-          mode: 'cors',
         });
         
         clearTimeout(timeoutId);
@@ -146,18 +107,8 @@ class BackendService {
       } catch (error: any) {
         lastError = error;
         
-        // Erro de rede (Failed to fetch) - em produção, não mostrar erro, apenas retornar modo offline
+        // Erro de rede (Failed to fetch)
         if (error.message?.includes('Failed to fetch') || error.name === 'TypeError' || error.message?.includes('NetworkError')) {
-          // Em produção, não tentar novamente, apenas retornar modo offline
-          if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            return {
-              data: null as T,
-              status: 0,
-              error: 'Modo offline'
-            };
-          }
-          
-          // Em desenvolvimento, mostrar mensagem e tentar novamente
           const errorMsg = `❌ SERVIDOR NÃO ESTÁ RODANDO!\n\nO servidor precisa estar rodando para que o sistema funcione.\n\n🔧 SOLUÇÃO:\n1. Abra um terminal na pasta do projeto\n2. Execute: npm run server:dev\n3. Ou execute: start-server.bat (Windows)\n\n📌 O servidor deve estar rodando em: ${this.baseUrl}\n\n⚠️ Sem o servidor rodando, você NÃO conseguirá:\n- Aprovar cadastros\n- Excluir cadastros\n- Clientes criarem contas\n- Usar qualquer funcionalidade do sistema`;
           if (attempt < retries) {
             await new Promise(resolve => setTimeout(resolve, retryDelay * (attempt + 1)));
@@ -179,15 +130,7 @@ class BackendService {
       }
     }
     
-    // Todas as tentativas falharam - em produção, retornar modo offline
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return {
-        data: null as T,
-        status: 0,
-        error: 'Modo offline'
-      };
-    }
-    
+    // Todas as tentativas falharam
     throw new Error(
       lastError?.message || 'Falha ao conectar com o servidor. Verifique sua conexão.'
     );
