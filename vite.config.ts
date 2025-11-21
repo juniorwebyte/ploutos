@@ -12,6 +12,9 @@ export default defineConfig({
     }),
   ],
   base: '/',
+  // Garantir que o index.html seja processado corretamente
+  root: '.',
+  publicDir: 'public',
   build: {
     // Otimizações de build para melhor performance
     target: 'esnext',
