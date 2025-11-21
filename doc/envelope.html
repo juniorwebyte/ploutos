@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <title>Molde de Envelope – Movimento do Caixa (A4)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    @page { size: A4; margin: 0; }
+    html, body { height: 100%; }
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: #f7f7f7; }
+    .toolbar { position: fixed; inset: 0 0 auto 0; display: flex; gap: 8px; padding: 10px; background: #111; color: #fff; align-items: center; z-index: 2; }
+    .toolbar button { padding: 8px 14px; border: 0; border-radius: 8px; cursor: pointer; }
+    .toolbar button#print { background: #20a25a; color: #fff; }
+    .toolbar .note { opacity: 0.85; font-size: 13px; }
+    .sheet { width: 210mm; height: 297mm; margin: 56px auto 24px; background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,.12); position: relative; }
+    .legend { position: absolute; right: 8mm; top: 8mm; font-size: 10pt; background: rgba(255,255,255,.9); padding: 4mm; border: 1px solid #ccc; border-radius: 4px; }
+    .legend .item { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+    .line { width: 22px; height: 0; border-top: 2px solid #000; }
+    .dash { width: 22px; height: 0; border-top: 2px dashed #777; }
+
+    @media print {
+      .toolbar { display: none; }
+      body { background: #fff; }
+      .sheet { margin: 0; box-shadow: none; }
+      .legend { border: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="print" onclick="window.print()">Imprimir</button>
+    <div class="note">Imprima em escala 100% (sem ajustar à página). Linhas pretas = corte. Linhas tracejadas = dobra.</div>
+  </div>
+
+  <!-- Página A4 -->
+  <div class="sheet">
+    <!-- Legenda -->
+    <div class="legend">
+      <div class="item"><span class="line"></span> Corte</div>
+      <div class="item"><span class="dash"></span> Dobra</div>
+    </div>
+
+    <!-- Desenho em SVG no tamanho real da folha A4 -->
+    <svg width="210mm" height="297mm" viewBox="0 0 210 297" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <style>
+          .cut { stroke:#000; stroke-width:0.6; fill:none; }
+          .fold { stroke:#777; stroke-width:0.5; stroke-dasharray:3 2; }
+          .label { font: 3.5px Arial, Helvetica, sans-serif; fill:#000; }
+          .title { font: 6px Arial, Helvetica, sans-serif; font-weight:700; }
+          .small { font-size:3px; fill:#555; }
+        </style>
+      </defs>
+
+      <!-- Medidas base -->
+      <!-- Corpo (C5: 162 x 229 mm) centralizado -->
+      <g id="envelope">
+        <!-- Coordenadas -->
+        <!-- A4: 210x297 -->
+        <!-- Corpo -->
+        <rect id="body" x="24" y="34" width="162" height="229" class="cut" />
+
+        <!-- Linhas de DOBRA (bordas do corpo) -->
+        <line x1="24" y1="34" x2="186" y2="34" class="fold" />
+        <line x1="24" y1="263" x2="186" y2="263" class="fold" />
+        <line x1="24" y1="34" x2="24" y2="263" class="fold" />
+        <line x1="186" y1="34" x2="186" y2="263" class="fold" />
+
+        <!-- ABA SUPERIOR (altura ~32 mm, com leve chanfrado) -->
+        <polygon class="cut" points=" 34,263 176,263 166,295 44,295 " />
+        <text x="105" y="286" text-anchor="middle" class="label">Aba Superior – Dobre para baixo</text>
+
+        <!-- ABA INFERIOR (altura ~25 mm, com leve chanfrado) -->
+        <polygon class="cut" points=" 44,34 166,34 156,9 54,9 " />
+        <text x="105" y="16" text-anchor="middle" class="label">Aba Inferior – Dobre para cima • Passe cola para fixar</text>
+
+        <!-- ABAS LATERAIS (retangulares, 20 mm de largura, recuo de 20 mm nas pontas) -->
+        <polygon class="cut" points=" 4,54 24,54 24,243 4,243 " />
+        <text x="10" y="150" text-anchor="middle" transform="rotate(-90,10,150)" class="label">Aba Lateral Esquerda – Passe cola</text>
+
+        <polygon class="cut" points=" 186,54 206,54 206,243 186,243 " />
+        <text x="200" y="150" text-anchor="middle" transform="rotate(90,200,150)" class="label">Aba Lateral Direita – Passe cola</text>
+
+        <!-- CONTEÚDO INTERNO -->
+        <text x="105" y="60" text-anchor="middle" class="title">MOVIMENTO DE CAIXA — [Data ou Período]</text>
+
+        <text x="28" y="72" class="label">Empresa:</text>
+        <line x1="52" y1="72.5" x2="182" y2="72.5" class="cut" stroke-width="0.3" />
+
+        <text x="28" y="82" class="label">Responsável:</text>
+        <line x1="60" y1="82.5" x2="182" y2="82.5" class="cut" stroke-width="0.3" />
+
+        <text x="28" y="96" class="label">Descrição:</text>
+        <rect x="28" y="98" width="154" height="28" class="cut" stroke-width="0.3" />
+
+        <text x="28" y="135" class="label">Observações:</text>
+        <rect x="28" y="137" width="154" height="40" class="cut" stroke-width="0.3" />
+
+        <text x="105" y="253" text-anchor="middle" class="small">Cole as abas laterais por baixo da aba inferior. Depois feche com a aba superior.</text>
+      </g>
+
+      <!-- Régua de conferência (5 cm) -->
+      <line x1="10" y1="284" x2="60" y2="284" class="cut" />
+      <text x="35" y="289" text-anchor="middle" class="small">Escala de conferência: 50 mm</text>
+    </svg>
+  </div>
+</body>
+</html>

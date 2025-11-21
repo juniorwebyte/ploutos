@@ -1,0 +1,60 @@
+/* Otimizações de Performance CSS */
+
+/* GPU Acceleration para animações */
+.animate-float,
+.animate-bounce-in,
+.animate-shimmer,
+.animate-rotate-slow {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Otimização de scroll */
+.overflow-y-auto,
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Otimização de imagens */
+img {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+/* Reduzir repaints */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Otimização de transições */
+.transition-all,
+.transition-colors,
+.transition-transform {
+  will-change: transform, background-color, color, opacity;
+}
+
+/* Containment para melhor performance */
+.container-optimized {
+  contain: layout style paint;
+}
+
+/* Lazy loading de imagens */
+img[loading="lazy"] {
+  content-visibility: auto;
+}
+
+/* Otimização de fontes */
+@font-face {
+  font-display: swap;
+}
+
+/* Prevenção de layout shift */
+.skeleton-loader {
+  content-visibility: auto;
+  contain-intrinsic-size: 200px;
+}
+

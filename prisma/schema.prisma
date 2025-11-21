@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String  @id @default(uuid())
+  username  String  @unique
+  password  String
+  email     String?
+  phone     String?
+  role      String  @default("user") // user | admin | superadmin
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  license   License?
+  tenants   UserTenant[]
+  subscriptions UserSubscription[]
+  payments  Payment[]
+  auditLogs AuditLog[]
+}
+
+model License {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String   @unique
+  status       String   // trial | active | expired | blocked | expiring_soon
+  trialStart   DateTime
+  trialDays    Int
+  activationKey String?
+  activatedAt  DateTime?
+  validUntil   DateTime?
+  expiresAt    DateTime?
+  lastNotificationAt DateTime?
+  renewalKey   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Multi-tenant básico
+model Tenant {
+  id            String          @id @default(uuid())
+  name          String          @unique
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  users         UserTenant[]
+  subscriptions Subscription[]
+}
+
+model UserTenant {
+  userId    String
+  tenantId  String
+  role      String   @default("member") // owner | member | billing
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@id([userId, tenantId])
+}
+
+model Plan {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  priceCents  Int
+  interval    String   // monthly | yearly
+  features    String?  // JSON string instead of Json type
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id         String   @id @default(uuid())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId   String
+  plan       Plan     @relation(fields: [planId], references: [id])
+  planId     String
+  status     String   // active | past_due | canceled | trialing | expired | expiring_soon
+  startedAt  DateTime @default(now())
+  validUntil DateTime?
+  expiresAt  DateTime?
+  autoRenew  Boolean  @default(true)
+  lastNotificationAt DateTime?
+  txid       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  payments   Payment[]
+  userSubscriptions UserSubscription[]
+}
+
+model UserSubscription {
+  id             String   @id @default(uuid())
+  user           User     @relation(fields: [userId], references: [id])
+  userId         String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  subscriptionId String
+  status         String   // active | expired | canceled | expiring_soon
+  startedAt      DateTime @default(now())
+  expiresAt      DateTime?
+  lastNotificationAt DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@unique([userId, subscriptionId])
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  user          User     @relation(fields: [userId], references: [id])
+  userId        String
+  subscription  Subscription? @relation(fields: [subscriptionId], references: [id])
+  subscriptionId String?
+  amountCents   Int
+  currency      String   @default("BRL")
+  method        String   // pix | credit_card | debit_card | boleto | crypto
+  status        String   // pending | paid | failed | refunded
+  txid          String?
+  pixQrCode     String?
+  pixCopyPaste  String?
+  paymentLink   String?
+  metadata      String?  // JSON string
+  paidAt        DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([txid])
+  @@index([userId])
+  @@index([status])
+}
+
+model Webhook {
+  id          String   @id @default(uuid())
+  event       String   // payment.confirmed | subscription.created | subscription.expired | license.activated
+  payload     String   // JSON string
+  source      String   // pix | stripe | asaas | manual
+  status      String   // pending | processed | failed
+  attempts    Int      @default(0)
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([event])
+  @@index([status])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  user        User?    @relation(fields: [userId], references: [id])
+  userId      String?
+  action      String   // subscription.created | subscription.renewed | license.activated | payment.received
+  entityType  String   // subscription | license | payment | user
+  entityId    String?
+  details     String?  // JSON string
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+

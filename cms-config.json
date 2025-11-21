@@ -1,0 +1,135 @@
+{
+  "landingPage": {
+    "title": "Controle Total do Seu Caixa",
+    "subtitle": "Sistema completo de gestão financeira com PDV avançado, analytics em tempo real, chat interno, notificações inteligentes e backup automático. Transforme seu negócio com tecnologia de ponta.",
+    "primaryColor": "#10B981",
+    "theme": "modern",
+    "logo": "",
+    "favicon": "",
+    "sections": {
+      "hero": {
+        "title": "Controle Total do Seu Caixa",
+        "subtitle": "Sistema completo de gestão financeira com PDV avançado, analytics em tempo real, chat interno, notificações inteligentes e backup automático. Transforme seu negócio com tecnologia de ponta.",
+        "cta": "Testar Grátis por 30 Dias"
+      },
+      "features": {
+        "title": "Sistema Completo de Gestão",
+        "subtitle": "Mais de 15 recursos profissionais para transformar seu negócio",
+        "items": [
+          {
+            "title": "Gestão de Entradas",
+            "description": "Controle total de dinheiro, cartões, PIX, boletos e cheques com interface otimizada."
+          },
+          {
+            "title": "Controle de Saídas",
+            "description": "Registre descontos, retiradas, vales e comissões com validação automática."
+          },
+          {
+            "title": "Notas Fiscais",
+            "description": "Caderno completo para controle de entrada e saída de notas fiscais."
+          },
+          {
+            "title": "Comissões",
+            "description": "Sistema automático de cálculo de comissões para múltiplos vendedores."
+          },
+          {
+            "title": "Relatórios Completos",
+            "description": "Cupons profissionais otimizados para impressoras térmicas."
+          },
+          {
+            "title": "Segurança Total",
+            "description": "Backup automático e validações robustas para proteger seus dados."
+          },
+          {
+            "title": "Gateway de Pagamento",
+            "description": "Aceite PIX, cartões e criptomoedas com sistema profissional."
+          },
+          {
+            "title": "PDV Avançado",
+            "description": "Ponto de venda moderno com gestão de produtos e clientes integrada."
+          },
+          {
+            "title": "Analytics Dashboard",
+            "description": "Dashboard executivo com métricas avançadas e relatórios em tempo real."
+          },
+          {
+            "title": "Sistema de Notificações",
+            "description": "Central de notificações inteligente com categorização e prioridades."
+          },
+          {
+            "title": "Chat Interno",
+            "description": "Sistema de comunicação em tempo real para equipes e clientes."
+          },
+          {
+            "title": "Backup Automático",
+            "description": "Sistema de backup inteligente com múltiplos tipos e restauração rápida."
+          },
+          {
+            "title": "Monitoramento",
+            "description": "Monitoramento em tempo real de todas as operações do sistema."
+          },
+          {
+            "title": "Gestão de Metas",
+            "description": "Defina e acompanhe metas de vendas e performance da equipe."
+          },
+          {
+            "title": "Multi-plataforma",
+            "description": "Acesse de qualquer dispositivo: desktop, tablet ou smartphone."
+          }
+        ]
+      },
+      "newFeatures": {
+        "title": "Novos Recursos Revolucionários",
+        "subtitle": "Tecnologia de ponta para maximizar sua produtividade",
+        "items": [
+          {
+            "title": "Analytics Avançado",
+            "description": "Dashboard executivo com métricas em tempo real e insights inteligentes"
+          },
+          {
+            "title": "Chat em Tempo Real",
+            "description": "Comunicação instantânea entre equipes e atendimento ao cliente"
+          },
+          {
+            "title": "Notificações Inteligentes",
+            "description": "Central de notificações com categorização e prioridades automáticas"
+          },
+          {
+            "title": "Backup Automático",
+            "description": "Proteção total dos seus dados com backup inteligente e restauração rápida"
+          }
+        ]
+      },
+      "pricing": {
+        "title": "Planos Transparentes",
+        "subtitle": "Escolha o plano ideal para o seu negócio"
+      },
+      "cta": {
+        "title": "Pronto para transformar sua gestão financeira?",
+        "subtitle": "Junte-se a centenas de empresários que já otimizaram o controle do caixa",
+        "button": "Começar Agora - Grátis"
+      }
+    }
+  },
+  "system": {
+    "version": "3.0.0",
+    "lastUpdated": "2025-01-15",
+    "features": [
+      "PDV Avançado",
+      "Analytics Dashboard",
+      "Sistema de Notificações",
+      "Chat Interno",
+      "Backup Automático",
+      "Gestão de Entradas",
+      "Controle de Saídas",
+      "Notas Fiscais",
+      "Comissões",
+      "Relatórios Completos",
+      "Segurança Total",
+      "Gateway de Pagamento",
+      "Monitoramento",
+      "Gestão de Metas",
+      "Multi-plataforma"
+    ]
+  }
+}

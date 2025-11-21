@@ -1,0 +1,42 @@
+# Arquivos e pastas a ignorar no deploy da Vercel
+
+# Dependências (já instaladas pela Vercel)
+node_modules/
+
+# Arquivos de desenvolvimento
+.env.local
+.env.development
+.env.test
+
+# Arquivos de build local
+dist/
+dist-server/
+build/
+
+# Arquivos de configuração local
+.vscode/
+.idea/
+*.log
+*.log.*
+
+# Banco de dados local
+prisma/dev.db
+prisma/dev.db-journal
+*.db
+*.db-journal
+
+# Arquivos temporários
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Scripts de deploy local
+deploy.sh
+ecosystem.config.js
+
+# Arquivos de servidor (não necessários para frontend estático)
+server/
+server-simple.js
+package-server.json

@@ -1,0 +1,22 @@
+{
+  "name": "movimento-caixa-server-simple",
+  "version": "1.0.0",
+  "description": "Servidor simples para o Sistema de Movimento de Caixa",
+  "main": "server-simple.js",
+  "scripts": {
+    "start": "node server-simple.js",
+    "dev": "node server-simple.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  },
+  "keywords": [
+    "express",
+    "api",
+    "movimento-caixa",
+    "server"
+  ],
+  "author": "Webyte",
+  "license": "UNLICENSED"
+}
