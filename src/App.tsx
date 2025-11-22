@@ -10,6 +10,23 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import LicenseModal from './components/LicenseModal';
 import PaymentPage from './components/PaymentPage';
 
+// Componente de loading simples
+const LoadingFallback = () => (
+  <div 
+    role="status" 
+    aria-live="polite"
+    className="min-h-screen bg-white flex items-center justify-center"
+  >
+    <div className="text-center">
+      <div 
+        className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-500 border-t-transparent mx-auto mb-4" 
+        aria-hidden="true" 
+      />
+      <p className="text-gray-700 text-lg font-semibold">Carregando...</p>
+    </div>
+  </div>
+);
+
 // Lazy load components
 const Login = React.lazy(() => import('./components/Login'));
 const CashFlow = React.lazy(() => import('./components/CashFlow'));
@@ -198,15 +215,7 @@ function App() {
     <ErrorBoundary>
       <AuthProvider>
         <Router>
-          <Suspense fallback={
-            <div className="min-h-screen bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 flex items-center justify-center" role="status" aria-live="polite" aria-label="Carregando aplicação">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent mx-auto mb-4" aria-hidden="true"></div>
-                <div className="text-white text-xl font-semibold" style={{ fontFamily: 'Poppins, sans-serif' }}>Carregando PloutosLedger...</div>
-                <div className="text-white/80 text-sm mt-2" style={{ fontFamily: 'Inter, sans-serif' }}>Por favor, aguarde</div>
-              </div>
-            </div>
-          }>
+          <Suspense fallback={<LoadingFallback />}>
             <Routes>
               <Route path="/pay/:linkinvoiceId" element={<PaymentRoute />} />
               <Route path="/*" element={<AppContent />} />

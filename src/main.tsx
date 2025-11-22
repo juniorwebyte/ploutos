@@ -23,22 +23,9 @@ const LoadingFallback = () => (
   </div>
 );
 
-// Remove loading inline do HTML quando a aplicação carrega
+// Renderiza a aplicação React
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  // Remove loading após a aplicação iniciar
-  const removeInlineLoading = () => {
-    rootElement.classList.add('loaded');
-    // Remove estilos inline de loading após React carregar
-    const inlineStyle = document.querySelector('style');
-    if (inlineStyle && inlineStyle.textContent?.includes('#root::before')) {
-      // Adiciona regra CSS para ocultar o loading quando a classe 'loaded' está presente
-      const style = document.createElement('style');
-      style.textContent = '#root.loaded::before, #root.loaded::after { display: none !important; }';
-      document.head.appendChild(style);
-    }
-  };
-
   createRoot(rootElement).render(
     <StrictMode>
       <ErrorBoundary>
@@ -48,7 +35,6 @@ if (rootElement) {
       </ErrorBoundary>
     </StrictMode>
   );
-
-  // Remove loading após React carregar
-  setTimeout(removeInlineLoading, 100);
+} else {
+  console.error('Elemento root não encontrado!');
 }
