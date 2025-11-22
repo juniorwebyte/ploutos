@@ -39,6 +39,7 @@ Thumbs.db
 
 # Servidor (não necessário para frontend)
 server/
+prisma/
 ecosystem.config.js
 package-server.json
 server-simple.js
