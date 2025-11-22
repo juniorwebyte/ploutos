@@ -37,8 +37,9 @@
     "deploy:status": "bash scripts/status.sh",
     "start": "npm run server:start",
     "start:prod": "pm2 start ecosystem.config.js --env production",
-    "postbuild": "npx prisma generate",
-    "predeploy": "npm run build && npm run server:build && npx prisma generate"
+    "postbuild": "echo 'Postbuild completed'",
+    "predeploy": "npm run build && npm run server:build && npx prisma generate",
+    "build:vercel": "tsc && vite build"
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",
