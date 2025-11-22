@@ -32,8 +32,6 @@
     "deploy:postgres": "bash scripts/setup-postgres.sh",
     "deploy:migrate": "bash scripts/migrate-to-postgres.sh",
     "deploy:configure-db": "bash scripts/configure-db.sh",
-    "deploy:vercel": "vercel --prod",
-    "deploy:vercel:dev": "vercel",
     "deploy:healthcheck": "bash scripts/healthcheck.sh",
     "deploy:restart": "bash scripts/restart.sh",
     "deploy:status": "bash scripts/status.sh",

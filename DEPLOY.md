@@ -7,11 +7,11 @@ Este guia fornece instruções detalhadas para fazer deploy do PloutosLedger em 
 1. [Pré-requisitos](#pré-requisitos)
 2. [Configuração de Variáveis de Ambiente](#configuração-de-variáveis-de-ambiente)
 3. [Deploy em VPS Tradicional](#deploy-em-vps-tradicional)
-4. [Deploy no Vercel](#deploy-no-vercel)
-5. [Deploy no Bolt.new](#deploy-no-boltnew)
-6. [Deploy com Docker](#deploy-com-docker)
-7. [Deploy no Railway](#deploy-no-railway)
-8. [Deploy no Render](#deploy-no-render)
+4. [Deploy no Bolt.new](#deploy-no-boltnew)
+5. [Deploy com Docker](#deploy-com-docker)
+6. [Deploy no Railway](#deploy-no-railway)
+7. [Deploy no Render](#deploy-no-render)
+8. [Deploy em Hospedagens Web Tradicionais](#deploy-em-hospedagens-web-tradicionais)
 9. [Troubleshooting](#troubleshooting)
 
 ---
@@ -27,9 +27,9 @@ Este guia fornece instruções detalhadas para fazer deploy do PloutosLedger em 
 
 ### Requisitos por Plataforma
 - **VPS**: Ubuntu 20.04+ / Debian 11+
-- **Vercel**: Conta no Vercel
 - **Docker**: Docker 20.10+
 - **Bolt.new**: Conta no Bolt.new
+- **Hospedagens Web**: cPanel/FTP ou acesso SSH
 
 ---
 
@@ -230,44 +230,6 @@ sudo ufw enable
 
 ---
 
-## ☁️ Deploy no Vercel
-
-### Configuração
-
-1. **Instalar Vercel CLI:**
-   ```bash
-   npm install -g vercel
-   ```
-
-2. **Fazer login:**
-   ```bash
-   vercel login
-   ```
-
-3. **Deploy:**
-   ```bash
-   vercel --prod
-   ```
-
-### Configuração via Dashboard
-
-1. Acesse [vercel.com](https://vercel.com)
-2. Importe seu repositório
-3. Configure variáveis de ambiente:
-   - `DATABASE_URL`
-   - `JWT_SECRET`
-   - `CORS_ORIGIN`
-   - `VITE_API_BASE_URL`
-4. Deploy automático será ativado
-
-### Nota sobre Backend
-
-O Vercel é otimizado para frontend. Para o backend completo:
-- **Opção 1**: Deploy do backend separado em VPS/Railway/Render
-- **Opção 2**: Usar Vercel Serverless Functions (configurar rotas específicas)
-- **Opção 3**: Usar `vercel-serverless.json` para deploy apenas do frontend
-
----
 
 ## ⚡ Deploy no Bolt.new
 
@@ -367,6 +329,118 @@ bolt deploy
 5. Adicione PostgreSQL Database (se necessário)
 6. Configure variáveis de ambiente
 7. Deploy
+
+---
+
+## 🌐 Deploy em Hospedagens Web Tradicionais
+
+### cPanel / Hosting Tradicional
+
+#### 1. Preparar Arquivos
+
+```bash
+# Build da aplicação
+npm run build
+npm run server:build
+
+# Arquivos necessários para upload:
+# - dist/ (frontend buildado)
+# - dist-server/ (backend buildado)
+# - package.json
+# - node_modules/ (ou instalar no servidor)
+# - .env (configurar no servidor)
+# - prisma/
+```
+
+#### 2. Upload via FTP/cPanel
+
+1. **Conecte via FTP ou File Manager do cPanel**
+2. **Faça upload dos arquivos:**
+   - Upload `dist/` para `public_html/`
+   - Upload `dist-server/` para uma pasta segura (ex: `app/`)
+   - Upload `package.json`, `prisma/`, etc.
+
+#### 3. Configurar no Servidor
+
+```bash
+# Via SSH (se disponível)
+cd ~/public_html
+npm install --production
+
+# Gerar Prisma Client
+npx prisma generate
+
+# Executar migrações
+npx prisma migrate deploy
+```
+
+#### 4. Configurar .htaccess (Apache)
+
+Crie arquivo `.htaccess` na raiz:
+
+```apache
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# Cache de assets
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/jpg "access plus 1 year"
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/gif "access plus 1 year"
+  ExpiresByType image/png "access plus 1 year"
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType application/javascript "access plus 1 year"
+</IfModule>
+```
+
+#### 5. Configurar Node.js no cPanel
+
+1. Acesse **Node.js Selector** no cPanel
+2. Crie aplicação Node.js:
+   - **Application root**: `/home/usuario/app`
+   - **Application URL**: escolha domínio/subdomínio
+   - **Application startup file**: `dist-server/index.js`
+   - **Application mode**: Production
+
+3. **Configure variáveis de ambiente** no painel Node.js do cPanel
+
+#### 6. Iniciar Aplicação
+
+```bash
+# No Node.js Selector do cPanel, clique em "Run NPM Install"
+# Depois clique em "Start App"
+```
+
+### Hospedagens com Node.js Support
+
+Muitas hospedagens modernas oferecem suporte a Node.js:
+
+- **Hostinger** - Node.js disponível via painel
+- **HostGator** - Node.js via cPanel
+- **BlueHost** - Node.js support
+- **GoDaddy** - Node.js disponível
+
+**Siga os passos acima adaptando para o painel da sua hospedagem.**
+
+### Limitações em Hospedagens Tradicionais
+
+⚠️ **Importante saber:**
+- Nem todas as hospedagens suportam Node.js
+- Portas customizadas podem não estar disponíveis
+- Prisma pode precisar de ajustes
+- Considere usar Docker ou VPS para mais controle
+
+**Recomendação:** Se sua hospedagem não suporta Node.js adequadamente, considere:
+- Migrar para VPS (mais controle)
+- Usar Docker (mais portável)
+- Usar Bolt.new (mais simples)
 
 ---
 

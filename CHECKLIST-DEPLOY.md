@@ -50,13 +50,6 @@ Use este checklist para garantir que seu deploy está completo e funcional.
 - [ ] Containers iniciados (`docker-compose up -d`)
 - [ ] Logs verificados (`docker-compose logs`)
 
-### Vercel
-- [ ] Conta Vercel criada
-- [ ] Projeto criado no Vercel
-- [ ] Variáveis de ambiente configuradas no dashboard
-- [ ] Deploy executado (`vercel --prod`)
-- [ ] Domínio configurado (se aplicável)
-
 ### Railway/Render
 - [ ] Conta criada na plataforma
 - [ ] Projeto criado
@@ -71,6 +64,14 @@ Use este checklist para garantir que seu deploy está completo e funcional.
 - [ ] Arquivo `bolt.json` verificado
 - [ ] Variáveis de ambiente configuradas
 - [ ] Deploy executado
+
+### Hospedagens Web Tradicionais
+- [ ] Acesso FTP/cPanel configurado
+- [ ] Node.js disponível na hospedagem
+- [ ] Build da aplicação executado
+- [ ] Arquivos enviados via FTP/cPanel
+- [ ] Variáveis de ambiente configuradas
+- [ ] Aplicação iniciada no painel
 
 ## 🔒 Segurança
 

@@ -4,13 +4,11 @@ Seu projeto **PloutosLedger** está agora totalmente preparado para deploy em pr
 
 ## ✅ O Que Foi Criado
 
-### 📦 Configurações de Plataforma (6 arquivos)
-- ✅ **Vercel** - Configuração full-stack com serverless functions
+### 📦 Configurações de Plataforma (4 arquivos)
 - ✅ **Bolt.new** - Configuração completa
 - ✅ **Railway** - Configuração otimizada
 - ✅ **Render** - Configuração YAML
-- ✅ **Netlify** - Configuração frontend
-- ✅ **Vercel Serverless** - Configuração alternativa
+- ✅ **Hospedagens Web Tradicionais** - Instruções para cPanel/FTP
 
 ### 🐳 Docker (3 arquivos)
 - ✅ **Dockerfile** - Multi-stage build otimizado
@@ -86,13 +84,15 @@ sudo bash scripts/deploy-vps.sh
 docker-compose up -d
 ```
 
-### 4️⃣ Deploy no Vercel
+### 4️⃣ Deploy em Hospedagem Tradicional
 
 ```bash
-# Deploy frontend + serverless
-vercel --prod
+# Build da aplicação
+npm run build
+npm run server:build
 
-# Ou configure no dashboard Vercel
+# Faça upload via FTP/cPanel
+# Configure Node.js no painel da hospedagem
 ```
 
 ## 📋 Plataformas Suportadas
@@ -101,11 +101,10 @@ vercel --prod
 |------------|--------|-------------------------|
 | VPS Tradicional | ✅ | `scripts/deploy-vps.sh`, `nginx.conf` |
 | Docker | ✅ | `Dockerfile`, `docker-compose.yml` |
-| Vercel | ✅ | `vercel.json`, `api/index.ts` |
 | Railway | ✅ | `railway.json` |
 | Render | ✅ | `render.yaml` |
 | Bolt.new | ✅ | `bolt.json` |
-| Netlify | ✅ | `netlify.toml` |
+| Hospedagens Web | ✅ | Instruções em `DEPLOY.md` |
 
 ## 🔐 Segurança Implementada
 
@@ -137,7 +136,7 @@ vercel --prod
 3. **Escolha Sua Plataforma:**
    - VPS: Mais controle, precisa gerenciar servidor
    - Docker: Fácil deploy, isolado
-   - Vercel/Railway/Render: Mais simples, gerenciado
+   - Railway/Render: Mais simples, gerenciado
    - Bolt.new: Deploy rápido e fácil
 
 4. **Teste o Deploy:**

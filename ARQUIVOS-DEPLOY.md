@@ -13,11 +13,6 @@ Este documento lista todos os arquivos criados para facilitar o deploy do Plouto
 
 ## 🚀 Configurações de Plataforma
 
-### Vercel
-- **`vercel.json`** - Configuração para deploy no Vercel (full-stack com serverless)
-- **`vercel-serverless.json`** - Configuração alternativa para apenas frontend
-- **`api/index.ts`** - Serverless function handler para Vercel
-
 ### Bolt.new
 - **`bolt.json`** - Configuração para deploy no Bolt.new
 
@@ -27,8 +22,6 @@ Este documento lista todos os arquivos criados para facilitar o deploy do Plouto
 ### Render
 - **`render.yaml`** - Configuração para deploy no Render
 
-### Netlify
-- **`netlify.toml`** - Configuração para deploy no Netlify (frontend apenas)
 
 ## 🐳 Docker
 
@@ -77,7 +70,7 @@ Este documento lista todos os arquivos criados para facilitar o deploy do Plouto
 ### Git
 - **`.gitattributes`** - Configuração para line endings corretos em diferentes OS
 - **`.dockerignore`** - Arquivos ignorados no build Docker
-- **`.vercelignore`** - Arquivos ignorados no deploy Vercel (já existia, mantido)
+- **`.vercelignore`** - Arquivos ignorados no deploy (mantido se já existia)
 
 ### Package.json
 - **`package.json`** - Scripts de deploy adicionados
@@ -87,8 +80,6 @@ Este documento lista todos os arquivos criados para facilitar o deploy do Plouto
 
 ```
 PloutosLedger/
-├── api/                          # Serverless functions (Vercel)
-│   └── index.ts
 ├── scripts/                      # Scripts de deploy e manutenção
 │   ├── deploy-vps.sh
 │   ├── build-prod.sh
@@ -106,12 +97,9 @@ PloutosLedger/
 │   ├── schema.prisma            # Atualizado
 │   └── schema.production.prisma # Alternativo
 ├── Configurações de Plataforma
-│   ├── vercel.json
-│   ├── vercel-serverless.json
 │   ├── bolt.json
 │   ├── railway.json
-│   ├── render.yaml
-│   └── netlify.toml
+│   └── render.yaml
 ├── Docker
 │   ├── Dockerfile
 │   ├── docker-compose.yml
@@ -148,10 +136,6 @@ PloutosLedger/
 **Docker:**
 - Use `docker-compose.yml` e `Dockerfile`
 - Configure variáveis no `.env`
-
-**Vercel:**
-- Use `vercel.json`
-- Configure variáveis no dashboard Vercel
 
 **Railway/Render/Bolt:**
 - Use arquivos de configuração específicos (`railway.json`, `render.yaml`, `bolt.json`)

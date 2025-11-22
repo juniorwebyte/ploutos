@@ -71,11 +71,11 @@ docker-compose up -d
 ## 📋 Plataformas Suportadas
 
 - ✅ **VPS Tradicional** (Ubuntu/Debian)
-- ✅ **Vercel** (Frontend + Serverless)
 - ✅ **Bolt.new** (Full-stack)
 - ✅ **Docker** (Containers)
 - ✅ **Railway** (Full-stack)
 - ✅ **Render** (Full-stack)
+- ✅ **Hospedagens Web Tradicionais** (cPanel/FTP)
 
 ---
 
