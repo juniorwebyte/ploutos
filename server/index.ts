@@ -11,6 +11,45 @@ import path from 'path';
 const prisma = new PrismaClient();
 const app = express();
 
+// Rate limiting simples (em memória)
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minuto
+const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10);
+
+function rateLimitMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (process.env.NODE_ENV !== 'production') {
+    return next(); // Desabilitar em desenvolvimento
+  }
+
+  const identifier = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const key = `${identifier}_${Math.floor(now / RATE_LIMIT_WINDOW)}`;
+  
+  const current = rateLimitMap.get(key) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW };
+  
+  if (current.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return res.status(429).json({ 
+      error: 'Too many requests', 
+      message: 'Rate limit exceeded. Please try again later.',
+      retryAfter: Math.ceil((current.resetTime - now) / 1000)
+    });
+  }
+  
+  current.count++;
+  rateLimitMap.set(key, current);
+  
+  // Limpar entradas antigas periodicamente
+  if (Math.random() < 0.01) { // 1% de chance de limpar
+    for (const [k, v] of rateLimitMap.entries()) {
+      if (v.resetTime < now) {
+        rateLimitMap.delete(k);
+      }
+    }
+  }
+  
+  next();
+}
+
 // Configuração de CORS (DEVE SER O PRIMEIRO MIDDLEWARE)
 const corsOptions = {
   origin: process.env.CORS_ORIGIN === '*' ? true : process.env.CORS_ORIGIN?.split(',') || '*',
@@ -23,6 +62,9 @@ if (process.env.NODE_ENV === 'production') {
 } else {
   app.use(cors());
 }
+
+// Rate limiting (aplicar após CORS)
+app.use(rateLimitMiddleware);
 
 // Configuração de body parser com limite
 const maxBodySize = process.env.MAX_BODY_SIZE ? parseInt(process.env.MAX_BODY_SIZE) : 10485760; // 10MB padrão
@@ -97,7 +139,9 @@ app.post('/webhooks/pix', async (req, res) => {
       if (sub) {
         await prisma.subscription.update({ where: { id: sub.id }, data: { status: 'active' } });
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Erro ao processar webhook PIX:', e);
+    }
     // Responder 200 imediatamente
     res.json({ ok: true });
   } catch (e: any) {
@@ -277,8 +321,13 @@ app.post('/api/pending-users/:id/approve', authMiddleware(), requireRole('admin'
       counter++;
     }
     
+    // Validar senha
+    if (!pendingUser.password || pendingUser.password.length < 6) {
+      return res.status(400).json({ error: 'Senha deve ter no mínimo 6 caracteres' });
+    }
+    
     // Criar usuário no banco de dados
-    const hashedPassword = await bcrypt.hash(pendingUser.password || 'demo123', 10);
+    const hashedPassword = await bcrypt.hash(pendingUser.password, 10);
     const user = await prisma.user.create({ 
       data: { 
         username, 
@@ -316,7 +365,7 @@ app.post('/api/pending-users/:id/approve', authMiddleware(), requireRole('admin'
         const appDomain = process.env.VITE_APP_DOMAIN || 'localhost:5173';
         const appProtocol = process.env.VITE_APP_PROTOCOL || 'http';
         const appUrl = `${appProtocol}://${appDomain}`;
-        const text = encodeURIComponent(`✅ Aprovado!\nSeu acesso foi criado.\nUsuário: ${username}\nSenha: ${pendingUser.password || 'demo123'}\nLink: ${appUrl}`);
+        const text = encodeURIComponent(`✅ Aprovado!\nSeu acesso foi criado.\nUsuário: ${username}\nSenha: ${pendingUser.password}\nLink: ${appUrl}`);
         const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(clientPhone)}&text=${text}&apikey=${encodeURIComponent(apikey)}`;
         await fetch(url);
       }
@@ -324,7 +373,9 @@ app.post('/api/pending-users/:id/approve', authMiddleware(), requireRole('admin'
       const adminText = encodeURIComponent(`🆕 Usuário aprovado e criado: ${username}\nNome: ${pendingUser.name}\nEmail: ${pendingUser.email}\nFone: ${pendingUser.phone}`);
       const adminUrl = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(adminPhone)}&text=${adminText}&apikey=${encodeURIComponent(apikey)}`;
       await fetch(adminUrl);
-    } catch {}
+    } catch (e) {
+      console.warn('Erro ao enviar notificação WhatsApp:', e);
+    }
     
     res.json({ ok: true, approved: username, user: { id: user.id, username, email: user.email } });
   } catch (e: any) {
@@ -384,7 +435,9 @@ app.post('/api/leads/:id/approve', authMiddleware(), requireRole('admin','supera
     
     const exists = await prisma.user.findUnique({ where: { username } });
     if (!exists) {
-      const hashed = await bcrypt.hash('demo123', 10);
+      // Gerar senha temporária segura
+      const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + '!1';
+      const hashed = await bcrypt.hash(tempPassword, 10);
       const user = await prisma.user.create({ 
         data: { 
           username, 
@@ -418,7 +471,7 @@ app.post('/api/leads/:id/approve', authMiddleware(), requireRole('admin','supera
         const appDomain = process.env.VITE_APP_DOMAIN || 'localhost:5173';
         const appProtocol = process.env.VITE_APP_PROTOCOL || 'http';
         const appUrl = `${appProtocol}://${appDomain}`;
-        const text = encodeURIComponent(`✅ Aprovado!\nSeu acesso foi criado.\nUsuário: ${username}\nSenha: demo123\nLink: ${appUrl}`);
+        const text = encodeURIComponent(`✅ Aprovado!\nSeu acesso foi criado.\nUsuário: ${username}\nSenha: ${tempPassword}\nLink: ${appUrl}`);
         const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(clientPhone)}&text=${text}&apikey=${encodeURIComponent(apikey)}`;
         await fetch(url);
       }
@@ -426,7 +479,9 @@ app.post('/api/leads/:id/approve', authMiddleware(), requireRole('admin','supera
       const adminText = encodeURIComponent(`🆕 Lead aprovado e usuário criado: ${username}\nNome: ${lead.name}\nEmail: ${lead.email}\nFone: ${lead.phone}`);
       const adminUrl = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(adminPhone)}&text=${adminText}&apikey=${encodeURIComponent(apikey)}`;
       await fetch(adminUrl);
-    } catch {}
+    } catch (e) {
+      console.warn('Erro ao enviar notificação WhatsApp:', e);
+    }
     res.json({ ok: true, approved: username });
   } catch (e:any) {
     res.status(500).json({ error: e?.message || 'failed' });
@@ -488,9 +543,14 @@ app.delete('/api/pending-users/:id', authMiddleware(), requireRole('admin','supe
 // Criar usuário de demo (público) – usado após verificação do WhatsApp
 app.post('/api/public/demo-user', async (req, res) => {
   try {
-    const body = z.object({ username: z.string().min(3), password: z.string().min(3).default('demo123'), email: z.string().optional() }).safeParse(req.body);
+    const body = z.object({ username: z.string().min(3), password: z.string().min(6), email: z.string().optional() }).safeParse(req.body);
     if (!body.success) return res.status(400).json(body.error);
     const { username, password, email } = body.data;
+    
+    // Validar senha
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Senha deve ter no mínimo 6 caracteres' });
+    }
     const exists = await prisma.user.findUnique({ where: { username } });
     if (exists) {
       return res.json({ ok: true, user: { id: exists.id, username: exists.username } });
@@ -504,22 +564,34 @@ app.post('/api/public/demo-user', async (req, res) => {
   }
 });
 
-// Seed superadmin (dev-only)
+// Seed superadmin (dev-only) - DESABILITAR EM PRODUÇÃO
 app.post('/api/seed/superadmin', async (_req, res) => {
+  // Bloquear em produção
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Esta rota está desabilitada em produção' });
+  }
+  
   try {
     const exists = await prisma.user.findUnique({ where: { username: 'Admin' } });
     if (exists) return res.json({ ok: true, user: exists });
-    const hashed = await bcrypt.hash('Admin', 10);
+    // Gerar senha segura para dev
+    const devPassword = process.env.DEV_ADMIN_PASSWORD || 'Admin123!@#';
+    const hashed = await bcrypt.hash(devPassword, 10);
     const user = await prisma.user.create({ data: { username: 'Admin', password: hashed, role: 'superadmin' } });
     await prisma.license.create({ data: { userId: user.id, status: 'trial', trialStart: new Date(), trialDays: 7 } });
-    res.json({ ok: true, user });
+    res.json({ ok: true, user, message: '⚠️ Usar apenas em desenvolvimento!' });
   } catch (e: any) {
     res.status(500).json({ error: e?.message || 'seed failed' });
   }
 });
 
-// Seed all users
+// Seed all users (dev-only) - DESABILITAR EM PRODUÇÃO
 app.post('/api/seed/users', async (_req, res) => {
+  // Bloquear em produção
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Esta rota está desabilitada em produção' });
+  }
+  
   try {
     // Criar usuário Webyte (cliente)
     const webyteUser = await prisma.user.upsert({
@@ -533,23 +605,25 @@ app.post('/api/seed/users', async (_req, res) => {
     });
 
     // Criar usuário admin (superadmin)
+    const adminPassword = process.env.DEV_ADMIN_PASSWORD || 'Admin123!@#';
     const adminUser = await prisma.user.upsert({
       where: { username: 'admin' },
       update: {},
       create: {
         username: 'admin',
-        password: await bcrypt.hash('admin123', 10),
+        password: await bcrypt.hash(adminPassword, 10),
         role: 'superadmin',
       },
     });
 
     // Criar usuário demo
+    const demoPassword = process.env.DEV_DEMO_PASSWORD || 'Demo123!@#';
     const demoUser = await prisma.user.upsert({
       where: { username: 'demo' },
       update: {},
       create: {
         username: 'demo',
-        password: await bcrypt.hash('demo123', 10),
+        password: await bcrypt.hash(demoPassword, 10),
         role: 'user',
       },
     });
@@ -679,12 +753,14 @@ app.post('/api/self/license/ensure', authMiddleware(), async (req: AuthedRequest
     const activationKey = Math.random().toString(36).slice(2, 12).toUpperCase();
     const updated = await prisma.license.update({ where: { userId: user.id }, data: { status: 'blocked', activationKey } });
     try {
-      const phone = '+5511984801839';
-      const apikey = '1782254';
+      const phone = process.env.ADMIN_PHONE || '+5511984801839';
+      const apikey = process.env.CALLMEBOT_API_KEY || '1782254';
       const text = encodeURIComponent(`O teste de um usuário expirou. Chave de ativação gerada: ${activationKey}`);
       const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${text}&apikey=${encodeURIComponent(apikey)}`;
       await fetch(url);
-    } catch {}
+    } catch (e) {
+      console.warn('Erro ao enviar notificação WhatsApp:', e);
+    }
     return res.json(updated);
   }
   res.json(lic);
@@ -1536,20 +1612,85 @@ app.post('/api/admin/subscriptions/check-expiring', authMiddleware(), requireRol
 
 // CORS já foi configurado no início do arquivo
 
+// Middleware de validação de entrada
+function validateInput(input: any, type: 'string' | 'number' | 'email' | 'uuid'): boolean {
+  if (input === null || input === undefined) return false;
+  
+  switch (type) {
+    case 'string':
+      return typeof input === 'string' && input.length > 0 && input.length <= 1000;
+    case 'number':
+      return typeof input === 'number' && !isNaN(input) && isFinite(input);
+    case 'email':
+      return typeof input === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
+    case 'uuid':
+      return typeof input === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input);
+    default:
+      return true;
+  }
+}
+
+// Sanitização de entrada
+function sanitizeInput(input: string): string {
+  if (typeof input !== 'string') return '';
+  return input
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\//g, '&#x2F;')
+    .trim();
+}
+
 // Tratamento de erros global
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('❌ Erro não tratado:', err);
-  res.status(500).json({ 
+  console.error('❌ Erro não tratado:', {
+    message: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
+  
+  // Log de auditoria para erros críticos
+  if (process.env.NODE_ENV === 'production') {
+    // Em produção, registrar erros críticos
+    prisma.auditLog.create({
+      data: {
+        action: 'error.server',
+        entityType: 'system',
+        details: JSON.stringify({
+          message: err.message,
+          url: req.url,
+          method: req.method,
+          ip: req.ip
+        }),
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent') || undefined
+      }
+    }).catch(() => {
+      // Ignorar erros ao salvar log de auditoria
+    });
+  }
+  
+  res.status(err.status || 500).json({ 
     error: process.env.NODE_ENV === 'production' 
       ? 'Erro interno do servidor' 
       : err.message || 'Erro desconhecido',
-    stack: process.env.NODE_ENV === 'production' ? undefined : err.stack
+    stack: process.env.NODE_ENV === 'production' ? undefined : err.stack,
+    timestamp: new Date().toISOString()
   });
 });
 
 // Handler para rotas não encontradas
 app.use((req: express.Request, res: express.Response) => {
-  res.status(404).json({ error: 'Rota não encontrada' });
+  res.status(404).json({ 
+    error: 'Rota não encontrada',
+    path: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Configuração de porta

@@ -18,7 +18,7 @@ app.post('/api/auth/login', async (req, res) => {
     // Credenciais válidas para teste offline
     const validCredentials = {
       'Webyte': { password: 'Webyte', role: 'user' },
-      'admin': { password: 'admin123', role: 'superadmin' },
+      'admin': { password: '25031961', role: 'superadmin' },
       'demo': { password: 'demo123', role: 'user' },
       'caderno': { password: 'caderno2025', role: 'user' }
     };
@@ -91,7 +91,7 @@ app.listen(PORT, () => {
   console.log(`│ Usuário         │ Senha        │ Tipo        │`);
   console.log(`├─────────────────┼──────────────┼─────────────┤`);
   console.log(`│ Webyte          │ Webyte       │ Cliente     │`);
-  console.log(`│ admin           │ admin123     │ Super Admin │`);
+  console.log(`│ admin           │ 25031961     │ Super Admin │`);
   console.log(`│ demo            │ demo123      │ Demo        │`);
   console.log(`│ caderno         │ caderno2025  │ Caderno     │`);
   console.log(`└─────────────────┴──────────────┴─────────────┘`);

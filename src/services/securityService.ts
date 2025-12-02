@@ -199,12 +199,17 @@ class SecurityService {
   }
 
   // Criptografia simples (para dados sensíveis)
+  // NOTA: Esta é uma implementação básica. Para dados realmente sensíveis,
+  // use bibliotecas como crypto-js ou implemente criptografia no backend.
   encrypt(data: string): string {
     if (!this.config.enableEncryption) return data;
 
     try {
-      // Implementação simples de criptografia (em produção, usar biblioteca adequada)
-      const key = 'ploutos_secret_key_2024';
+      // Usar chave do ambiente ou gerar uma baseada no domínio
+      const envKey = typeof window !== 'undefined' 
+        ? (window.location.hostname || 'ploutosledger')
+        : 'ploutosledger';
+      const key = envKey + '_secret_' + new Date().getFullYear();
       let encrypted = '';
       for (let i = 0; i < data.length; i++) {
         encrypted += String.fromCharCode(
@@ -213,7 +218,8 @@ class SecurityService {
       }
       return btoa(encrypted);
     } catch (error) {
-      // Erro na criptografia
+      // Erro na criptografia - retornar dados sem criptografia
+      console.warn('Erro na criptografia:', error);
       return data;
     }
   }
@@ -222,7 +228,10 @@ class SecurityService {
     if (!this.config.enableEncryption) return encryptedData;
 
     try {
-      const key = 'ploutos_secret_key_2024';
+      const envKey = typeof window !== 'undefined' 
+        ? (window.location.hostname || 'ploutosledger')
+        : 'ploutosledger';
+      const key = envKey + '_secret_' + new Date().getFullYear();
       const data = atob(encryptedData);
       let decrypted = '';
       for (let i = 0; i < data.length; i++) {
@@ -232,7 +241,8 @@ class SecurityService {
       }
       return decrypted;
     } catch (error) {
-      // Erro na descriptografia
+      // Erro na descriptografia - retornar dados criptografados
+      console.warn('Erro na descriptografia:', error);
       return encryptedData;
     }
   }

@@ -139,17 +139,17 @@ export default function Login({ onBackToLanding, loginType, onBackToSelector }: 
     } catch {}
   }, []);
 
-  // Validação em tempo real do username/email
+  // Validação em tempo real do username/e-mail
   useEffect(() => {
     if (!usernameTouched && !username) return;
     
     if (!username.trim()) {
-      setUsernameError('Usuário ou email é obrigatório');
+      setUsernameError('Usuário ou e-mail é obrigatório');
     } else if (username.includes('@')) {
-      // Validação de email básica
+      // Validação de e-mail básica
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(username)) {
-        setUsernameError('Email inválido');
+        setUsernameError('E-mail inválido');
       } else {
         setUsernameError('');
       }
@@ -359,19 +359,19 @@ export default function Login({ onBackToLanding, loginType, onBackToSelector }: 
             <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             <div>
                 <label htmlFor="username" className="block text-sm font-semibold text-gray-700 mb-2" style={{ fontFamily: 'Inter, sans-serif' }}>
-                  Usuário ou Email <span className="text-red-500">*</span>
+                  Usuário ou E-mail <span className="text-red-500">*</span>
               </label>
                 <div className="relative">
-                  <input
-                    id="username"
-                    type="text"
-                    value={username}
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
                     onChange={(e) => {
                       setUsername(e.target.value);
                       setUsernameTouched(true);
                     }}
                     onBlur={() => setUsernameTouched(true)}
-                    onKeyPress={handleKeyPress}
+                  onKeyPress={handleKeyPress}
                     className={`w-full px-4 py-3 pr-10 border-2 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-300 hover:border-emerald-300 focus:shadow-lg hover:shadow-md transform hover:scale-[1.01] ${
                       usernameError && usernameTouched
                         ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
@@ -379,14 +379,14 @@ export default function Login({ onBackToLanding, loginType, onBackToSelector }: 
                         ? 'border-green-300 focus:border-green-500'
                         : 'border-gray-200'
                     }`}
-                    placeholder="Digite seu usuário ou email"
-                    required
-                    autoComplete="username"
-                    disabled={isLoading}
+                  placeholder="Digite seu usuário ou e-mail"
+                  required
+                  autoComplete="username"
+                  disabled={isLoading}
                     aria-invalid={usernameError && usernameTouched ? 'true' : 'false'}
                     aria-describedby={usernameError && usernameTouched ? 'username-error' : undefined}
-                    style={{ fontFamily: 'Inter, sans-serif' }}
-                  />
+                  style={{ fontFamily: 'Inter, sans-serif' }}
+                />
                   {usernameTouched && !usernameError && username && (
                     <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                       <CheckCircle className="w-5 h-5 text-green-500" aria-hidden="true" />

@@ -315,21 +315,73 @@ npm run test:coverage
 
 ## 📦 Deploy
 
+### Pré-requisitos
+- Node.js 18+ instalado
+- Banco de dados configurado (SQLite padrão)
+- Variáveis de ambiente configuradas (veja `DEPLOY.md`)
+
 ### Build de Produção
+
+#### Frontend
 ```bash
-npm run build
+npm run build:prod
 ```
 
-### Arquivos Gerados
-- `dist/index.html`
-- `dist/assets/` (CSS, JS, imagens)
-- `dist/` (todos os arquivos necessários)
+#### Backend
+```bash
+npm run server:build
+```
 
-### Upload
-1. Execute `npm run build`
-2. Copie conteúdo da pasta `dist/`
-3. Cole no diretório do servidor web
-4. Configure o servidor (Apache/Nginx)
+### Configuração de Variáveis de Ambiente
+
+Crie um arquivo `.env` na raiz do projeto com as variáveis necessárias:
+
+```env
+NODE_ENV=production
+PORT=4000
+JWT_SECRET=sua_chave_secreta_aqui
+CORS_ORIGIN=https://seu-dominio.com
+VITE_API_BASE_URL=https://api.seu-dominio.com
+```
+
+**IMPORTANTE**: Gere uma chave JWT_SECRET segura:
+```bash
+openssl rand -base64 32
+```
+
+### Deploy com PM2 (Recomendado)
+
+```bash
+# Instalar PM2 globalmente
+npm install -g pm2
+
+# Iniciar aplicação
+npm run start:prod
+
+# Configurar para iniciar no boot
+pm2 startup
+pm2 save
+```
+
+### Deploy Manual
+
+1. Execute `npm run build:prod && npm run server:build`
+2. Configure as variáveis de ambiente no arquivo `.env`
+3. Execute as migrações: `npm run db:migrate:deploy`
+4. Inicie o servidor: `node dist-server/index.js`
+
+### Arquivos Gerados
+- `dist/` - Frontend (HTML, CSS, JS)
+- `dist-server/` - Backend compilado
+
+### Documentação Completa
+
+Para instruções detalhadas de deploy, consulte o arquivo **[DEPLOY.md](./DEPLOY.md)** que inclui:
+- Configuração completa de variáveis de ambiente
+- Deploy em diferentes plataformas (PM2, Nginx, Vercel, Railway)
+- Configuração de SSL/HTTPS
+- Monitoramento e logs
+- Troubleshooting
 
 ## 🔄 Atualizações
 

@@ -99,11 +99,11 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
     
     if (contactFormTouched.email) {
       if (!contactFormData.email.trim()) {
-        errors.email = 'Email é obrigatório';
+        errors.email = 'E-mail é obrigatório';
       } else {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(contactFormData.email)) {
-          errors.email = 'Email inválido';
+          errors.email = 'E-mail inválido';
         }
       }
     }
@@ -682,7 +682,7 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
                       <Mail className="w-6 h-6 text-emerald-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">Email</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">E-mail</h4>
                       <a href="mailto:contato@ploutosledger.com" className="text-emerald-600 hover:text-emerald-700">
                         contato@ploutosledger.com
                       </a>
@@ -809,7 +809,7 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
 
                 <div>
                   <label htmlFor="contact-email" className="block text-sm font-medium text-gray-700 mb-2">
-                    Email <span className="text-red-500">*</span>
+                    E-mail <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="email"
@@ -841,7 +841,7 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
                   {contactFormTouched.email && !contactFormErrors.email && contactFormData.email && (
                     <p className="mt-1 text-sm text-green-600 flex items-center gap-1">
                       <CheckCircle2 className="w-4 h-4" />
-                      Email válido
+                      E-mail válido
                     </p>
                   )}
                 </div>
