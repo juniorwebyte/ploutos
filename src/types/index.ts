@@ -46,6 +46,41 @@ export interface CashFlowEntry {
   // Campos legados para compatibilidade
   outros?: number;
   outrosDescricao?: string;
+  
+  // Novos campos solicitados - múltiplos lançamentos
+  outrosLancamentos?: OutroLancamento[];
+  brindesLancamentos?: BrindeLancamento[];
+  crediario?: number;
+  crediarioClientes?: { nome: string; valor: number; parcelas: number }[];
+  cartaoPresente?: number;
+  cartaoPresenteClientes?: { nome: string; valor: number; parcelas: number }[];
+  cashBack?: number;
+  cashBackClientes?: CashBackCliente[];
+  
+  // Sistema de categorias
+  categoria?: { categoriaId: string; tagIds?: string[]; observacao?: string };
+}
+
+// Interface para cliente Cash Back
+export interface CashBackCliente {
+  nome: string;
+  cpf: string;
+  valor: number;
+  data: string; // Data do Cash Back
+  utilizado?: boolean; // Se já foi utilizado como desconto
+  valorUtilizado?: number; // Valor já utilizado
+}
+
+// Interface para lançamentos de Outros
+export interface OutroLancamento {
+  descricao: string;
+  valor: number;
+}
+
+// Interface para lançamentos de Brindes
+export interface BrindeLancamento {
+  descricao: string;
+  valor: number;
 }
 
 // Interface para múltiplas devoluções
@@ -123,6 +158,7 @@ export interface CashFlowExit {
   puxadorNome: string;
   puxadorPorcentagem: number;
   puxadorValor: number;
+  puxadorTotalVendas?: number;
   
   // Múltiplos clientes do puxador
   puxadorClientes: { nome: string; valor: number }[];
@@ -138,6 +174,9 @@ export interface CashFlowExit {
   correiosTipo: string;
   correiosEstado: string;
   correiosClientes: string[];
+  
+  // Sistema de categorias
+  categoria?: { categoriaId: string; tagIds?: string[]; observacao?: string };
 }
 
 // Interface para cancelamentos
@@ -154,6 +193,25 @@ export interface Cancelamento {
   data: string;
 }
 
+// Interface para Fechamento Parcial (troca de operador)
+export interface FechamentoParcial {
+  id: string;
+  dataHoraInicio: string;
+  dataHoraFim: string;
+  operadorSaida: string;
+  operadorEntrada: string;
+  saldoInicial: number;
+  saldoFinal: number;
+  totalEntradas: number;
+  totalSaidas: number;
+  observacoes?: string;
+  entries: CashFlowEntry;
+  exits: CashFlowExit;
+  cancelamentos?: Cancelamento[];
+  assinaturaOperadorSaida?: string;
+  assinaturaOperadorEntrada?: string;
+}
+
 export interface CashFlowData {
   entries: CashFlowEntry;
   exits: CashFlowExit;
@@ -162,6 +220,7 @@ export interface CashFlowData {
   cancelamentos?: Cancelamento[];
   observacoes?: string;
   notas?: string;
+  fechamentoParcial?: FechamentoParcial;
 }
 
 // Interface para configurações da empresa

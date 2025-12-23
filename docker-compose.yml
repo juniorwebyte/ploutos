@@ -1,79 +1,67 @@
-# ============================================
-# PLOUTOS LEDGER - Docker Compose para Produção
-# ============================================
-
 version: '3.8'
 
 services:
-  # Aplicação principal
+  # Aplicação
   app:
     build:
       context: .
       dockerfile: Dockerfile
-      target: production
-    container_name: ploutos-ledger-app
-    restart: unless-stopped
     ports:
       - "4000:4000"
     environment:
       - NODE_ENV=production
-      - PORT=4000
-      - HOST=0.0.0.0
-      - DATABASE_URL=file:./prisma/data/prod.db
+      - DATABASE_URL=postgresql://ploutos:ploutos123@db:5432/ploutosledger
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
-      - CORS_ORIGIN=${CORS_ORIGIN:-*}
-    env_file:
-      - .env
-    volumes:
-      - ./prisma/data:/app/prisma/data
-      - ./logs:/app/logs
+      - JWT_EXPIRES_IN=7d
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+      - VITE_API_URL=http://localhost:4000
+      - VITE_API_BASE_URL=http://localhost:4000
+      - PORT=4000
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - ploutos-network
-    depends_on:
-      - postgres
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    volumes:
+      - ./logs:/app/logs
 
-  # PostgreSQL (opcional - descomente se quiser usar PostgreSQL)
-  postgres:
+  # Banco de dados PostgreSQL
+  db:
     image: postgres:15-alpine
-    container_name: ploutos-ledger-db
-    restart: unless-stopped
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-ploutos}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change-me-in-production}
-      - POSTGRES_DB=${POSTGRES_DB:-ploutosledger}
+      - POSTGRES_USER=ploutos
+      - POSTGRES_PASSWORD=ploutos123
+      - POSTGRES_DB=ploutosledger
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - ploutos-network
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ploutos}"]
+      test: ["CMD-SHELL", "pg_isready -U ploutos"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - ploutos-network
 
-  # Nginx (reverso proxy - opcional)
+  # Nginx (opcional, para produção)
   nginx:
     image: nginx:alpine
-    container_name: ploutos-ledger-nginx
-    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    networks:
-      - ploutos-network
+      - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - app
+    restart: unless-stopped
+    networks:
+      - ploutos-network
+    profiles:
+      - production
 
 networks:
   ploutos-network:

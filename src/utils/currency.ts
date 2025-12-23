@@ -1,3 +1,46 @@
+// Função para cálculos precisos com moeda (evita problemas de ponto flutuante)
+export const preciseCurrency = {
+  // Converte valor para centavos (inteiro)
+  toCents: (value: number): number => {
+    return Math.round(value * 100);
+  },
+  
+  // Converte centavos para reais
+  fromCents: (cents: number): number => {
+    return cents / 100;
+  },
+  
+  // Soma valores com precisão
+  add: (...values: number[]): number => {
+    const totalCents = values.reduce((sum, val) => sum + preciseCurrency.toCents(val || 0), 0);
+    return preciseCurrency.fromCents(totalCents);
+  },
+  
+  // Subtrai valores com precisão
+  subtract: (a: number, b: number): number => {
+    const aCents = preciseCurrency.toCents(a || 0);
+    const bCents = preciseCurrency.toCents(b || 0);
+    return preciseCurrency.fromCents(aCents - bCents);
+  },
+  
+  // Multiplica valores com precisão
+  multiply: (a: number, b: number): number => {
+    const aCents = preciseCurrency.toCents(a || 0);
+    const bCents = preciseCurrency.toCents(b || 0);
+    return preciseCurrency.fromCents(Math.round((aCents * bCents) / 100));
+  },
+  
+  // Compara valores com precisão (retorna true se são iguais)
+  equals: (a: number, b: number): boolean => {
+    return preciseCurrency.toCents(a || 0) === preciseCurrency.toCents(b || 0);
+  },
+  
+  // Arredonda para 2 casas decimais
+  round: (value: number): number => {
+    return Math.round(value * 100) / 100;
+  }
+};
+
 export const formatCurrency = (value: number | string | undefined | null): string => {
   // Converter para número e validar
   const numValue = typeof value === 'string' ? parseFloat(value) : (value || 0);
@@ -7,10 +50,13 @@ export const formatCurrency = (value: number | string | undefined | null): strin
     return 'R$ 0,00';
   }
   
+  // Arredondar para evitar problemas de precisão
+  const roundedValue = preciseCurrency.round(numValue);
+  
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL'
-  }).format(numValue);
+  }).format(roundedValue);
 };
 
 export const parseCurrency = (value: string): number => {

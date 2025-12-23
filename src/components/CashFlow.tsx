@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { LogOut, Calculator, TrendingUp, TrendingDown, Save, RotateCcw, Download, FileText, Building, Info, CheckCircle2, XCircle, AlertCircle, BarChart3, X, Filter, Bell, AlertTriangle, ExternalLink, Maximize2, Minimize2, Search, Keyboard, FileSpreadsheet } from 'lucide-react';
+import { LogOut, Calculator, TrendingUp, TrendingDown, Save, RotateCcw, Download, FileText, Building, Info, CheckCircle2, XCircle, AlertCircle, BarChart3, X, Filter, Bell, AlertTriangle, ExternalLink, Maximize2, Minimize2, Search, Keyboard, FileSpreadsheet, Clock, Lock, Unlock } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import { useCashFlow } from '../hooks/useCashFlow';
 import { useDemoTimer } from '../hooks/useDemoTimer';
 import { useAccessControl } from '../hooks/useAccessControl';
-import { formatCurrency, formatCurrencyInput } from '../utils/currency';
+import { formatCurrency, formatCurrencyInput, preciseCurrency } from '../utils/currency';
 import { saveFundoCaixaPadrao, validatePIM } from '../hooks/useCashFlow';
 import PrintReport, { printCashFlow } from './PrintReport';
 import * as XLSX from 'xlsx';
@@ -25,7 +25,13 @@ import ValidationModal from './ValidationModal';
 import TemplatesModal from './TemplatesModal';
 import PDVIntegrationModal from './PDVIntegrationModal';
 import WebhooksModal from './WebhooksModal';
+import CategoryManager from './CategoryManager';
+import CategorySelector from './CategorySelector';
+import ConfirmHighValueModal from './ConfirmHighValueModal';
 import { useDarkMode } from '../hooks/useDarkMode';
+import { exportService } from '../services/exportService';
+import { categoryService } from '../services/categoryService';
+import { validateCPF, validateCNPJ, validatePixKey, isHighValue } from '../utils/validations';
 import { cashFlowAuditService } from '../services/cashFlowAuditService';
 import { cashFlowAlertsService } from '../services/cashFlowAlertsService';
 import { cashFlowBackupService } from '../services/cashFlowBackupService';
@@ -69,9 +75,26 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
     validatePixContaValues,
     validateCartaoLinkValues,
     validateBoletosValues,
+    validateCrediarioValues,
+    validateCartaoPresenteValues,
+    validateCashBackValues,
     canSave,
     adicionarCheque,
     removerCheque,
+    adicionarCrediarioCliente,
+    removerCrediarioCliente,
+    adicionarCartaoPresenteCliente,
+    removerCartaoPresenteCliente,
+    adicionarCashBackCliente,
+    removerCashBackCliente,
+    obterCashBackDisponivel,
+    utilizarCashBack,
+    adicionarOutroLancamento,
+    removerOutroLancamento,
+    adicionarBrindeLancamento,
+    removerBrindeLancamento,
+    totalOutrosLancamentos,
+    totalBrindesLancamentos,
     adicionarSaidaRetirada,
     removerSaidaRetirada,
     atualizarSaidaRetirada,
@@ -81,9 +104,23 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
 
   const [showConfirmClear, setShowConfirmClear] = useState(false);
   const [showConfirmFechamento, setShowConfirmFechamento] = useState(false);
+  const [showFechamentoParcialModal, setShowFechamentoParcialModal] = useState(false);
+  const [fechamentoParcialData, setFechamentoParcialData] = useState<{
+    operadorSaida: string;
+    operadorEntrada: string;
+    observacoes: string;
+  }>({
+    operadorSaida: user || '',
+    operadorEntrada: '',
+    observacoes: ''
+  });
   const [showCancelamentosModal, setShowCancelamentosModal] = useState(false);
   const [showDemoExpiredModal, setShowDemoExpiredModal] = useState(false);
   const [showFundoCaixaModal, setShowFundoCaixaModal] = useState(false);
+  const [showPuxadorPimModal, setShowPuxadorPimModal] = useState(false);
+  const [puxadorPimCode, setPuxadorPimCode] = useState('');
+  const [puxadorPimError, setPuxadorPimError] = useState('');
+  const [canEditPuxadorPercent, setCanEditPuxadorPercent] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showSavedRecords, setShowSavedRecords] = useState(false);
   const [showAlertCenter, setShowAlertCenter] = useState(false);
@@ -110,7 +147,9 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [showPDVIntegrationModal, setShowPDVIntegrationModal] = useState(false);
   const [showWebhooksModal, setShowWebhooksModal] = useState(false);
-  const [pendingHighValueAction, setPendingHighValueAction] = useState<{ field: string; value: number; callback: () => void } | null>(null);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [showHighValueConfirm, setShowHighValueConfirm] = useState(false);
+  const [pendingHighValueAction, setPendingHighValueAction] = useState<{ field: string; value: number; callback: () => void; description: string } | null>(null);
   const { isDark, toggleDarkMode } = useDarkMode();
   // Exibir/Recolher seções
   const [mostrarEntradas, setMostrarEntradas] = useState(true);
@@ -121,6 +160,12 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   const [showPixContaDetails, setShowPixContaDetails] = useState(true);
   const [showChequesDetails, setShowChequesDetails] = useState(true);
   const [showTaxasDetails, setShowTaxasDetails] = useState(true);
+  const [showOutrosDetails, setShowOutrosDetails] = useState(true);
+  const [showBrindesDetails, setShowBrindesDetails] = useState(true);
+  const [showCrediarioDetails, setShowCrediarioDetails] = useState(true);
+  const [showCartaoPresenteDetails, setShowCartaoPresenteDetails] = useState(true);
+  const [showCashBackDetails, setShowCashBackDetails] = useState(true);
+  const [mostrarOutrasEntradas, setMostrarOutrasEntradas] = useState(true);
   
   // Estados para múltiplas taxas
   const [novaTaxaNome, setNovaTaxaNome] = useState('');
@@ -133,6 +178,34 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   // Recolher seções principais
   const [mostrarBotoesPrincipais, setMostrarBotoesPrincipais] = useState(true);
   const [mostrarResumoRapido, setMostrarResumoRapido] = useState(true);
+  
+  // Estados para melhorias de Saídas
+  const [saidasSearchTerm, setSaidasSearchTerm] = useState('');
+  const [saidasFilterCategory, setSaidasFilterCategory] = useState<string>('all');
+  const [showSaidasResumo, setShowSaidasResumo] = useState(true);
+  const [showSaidasTemplates, setShowSaidasTemplates] = useState(false);
+  const [saidasTemplates, setSaidasTemplates] = useState<Array<{
+    id: string;
+    nome: string;
+    categoria: string;
+    descricao: string;
+    valor: number;
+    tipo: 'desconto' | 'saida' | 'devolucao' | 'vale' | 'correios' | 'transportadora';
+  }>>([]);
+
+  // Estados para melhorias de Entradas
+  const [entradasSearchTerm, setEntradasSearchTerm] = useState('');
+  const [entradasFilterCategory, setEntradasFilterCategory] = useState<string>('all');
+  const [showEntradasResumo, setShowEntradasResumo] = useState(true);
+  const [showEntradasTemplates, setShowEntradasTemplates] = useState(false);
+  const [entradasTemplates, setEntradasTemplates] = useState<Array<{
+    id: string;
+    nome: string;
+    categoria: string;
+    descricao: string;
+    valor: number;
+    tipo: 'dinheiro' | 'cartao' | 'pix' | 'boleto' | 'cheque' | 'outros';
+  }>>([]);
   // Estado para tela cheia
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Ref para o container do sistema
@@ -205,60 +278,6 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   const removeToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   }, []);
-
-  // Verificar alertas automaticamente
-  useEffect(() => {
-    const checkAlerts = () => {
-      // Verificar meta diária
-      const metaAlert = cashFlowAlertsService.checkDailyGoal(total, dailyGoal);
-      if (metaAlert) {
-        cashFlowAlertsService.addAlert(metaAlert);
-        // Mostrar toast apenas se for meta atingida (não apenas próximo)
-        if (metaAlert.type === 'success') {
-          showToast(metaAlert.type, metaAlert.title, metaAlert.message);
-        }
-      }
-
-      // Verificar saldo negativo
-      const saldoAlert = cashFlowAlertsService.checkNegativeBalance(total);
-      if (saldoAlert) {
-        cashFlowAlertsService.addAlert(saldoAlert);
-        showToast(saldoAlert.type, saldoAlert.title, saldoAlert.message);
-        
-        // Disparar webhook de alerta criado
-        webhookService.triggerEvent('cashflow.alert_created', {
-          type: saldoAlert.type,
-          category: saldoAlert.category,
-          title: saldoAlert.title,
-          message: saldoAlert.message
-        }, { userId: user || undefined });
-      }
-
-      // Verificar movimentação acima do normal
-      if (dailyHistory.length > 0) {
-        const averageTotal = dailyHistory.reduce((sum, record) => sum + (record.entradas || 0), 0) / dailyHistory.length;
-        const movimentacaoAlert = cashFlowAlertsService.checkHighMovement(totalEntradas, averageTotal);
-        if (movimentacaoAlert) {
-          cashFlowAlertsService.addAlert(movimentacaoAlert);
-        }
-      }
-
-      // Verificar último fechamento
-      const lastClose = dailyHistory.length > 0 
-        ? new Date(dailyHistory[dailyHistory.length - 1].date)
-        : undefined;
-      const fechamentoAlert = cashFlowAlertsService.createClosingReminder(lastClose);
-      if (fechamentoAlert) {
-        cashFlowAlertsService.addAlert(fechamentoAlert);
-      }
-    };
-
-    // Verificar a cada 30 segundos
-    const interval = setInterval(checkAlerts, 30000);
-    checkAlerts(); // Verificar imediatamente
-
-    return () => clearInterval(interval);
-  }, [total, dailyGoal, totalEntradas, dailyHistory, showToast]);
 
   // Atualizar contador de alertas não lidos
   useEffect(() => {
@@ -357,16 +376,100 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
 
   const totalSaidasCalculado = useMemo(() => {
     const totalValesFuncionarios = Array.isArray(exits.valesFuncionarios)
-      ? exits.valesFuncionarios.reduce((sum: number, item: { valor: number }) => sum + (Number(item.valor) || 0), 0)
+      ? exits.valesFuncionarios.reduce((sum: number, item: { valor: number }) => preciseCurrency.add(sum, Number(item.valor) || 0), 0)
       : 0;
-    return (
-      (Number(exits.descontos) || 0) +
-      (Number(exits.saida) || 0) +
-      (Number(exits.creditoDevolucao) || 0) +
-      totalValesFuncionarios +
-      (Number(exits.puxadorValor) || 0)
+    // Usar cálculos precisos para evitar problemas de ponto flutuante
+    return preciseCurrency.add(
+      Number(exits.descontos) || 0,
+      Number(exits.saida) || 0,
+      Number(exits.creditoDevolucao) || 0,
+      totalValesFuncionarios,
+      Number(exits.puxadorValor) || 0
     );
   }, [exits]);
+
+  // Calcular comissão do puxador automaticamente a partir do total de vendas e porcentagem
+  useEffect(() => {
+    const totalVendas = Number(exits.puxadorTotalVendas) || 0;
+    const percentual = Number(exits.puxadorPorcentagem) || 4;
+    const comissao = preciseCurrency.round((totalVendas * percentual) / 100);
+    if (!preciseCurrency.equals(comissao, exits.puxadorValor || 0)) {
+      handleExitChange('puxadorValor', comissao);
+    }
+  }, [exits.puxadorTotalVendas, exits.puxadorPorcentagem]);
+
+  // Calcular total de entradas para o progresso (incluindo cheques, taxas e envios de correios)
+  const totalEntradasCompleto = useMemo(() => {
+    const totalCheques = Array.isArray(entries.cheques)
+      ? entries.cheques.reduce((sum, cheque) => preciseCurrency.add(sum, Number(cheque.valor) || 0), 0)
+      : (Number(entries.cheque) || 0);
+    
+    const totalTaxas = Array.isArray(entries.taxas)
+      ? entries.taxas.reduce((sum, taxa) => preciseCurrency.add(sum, Number(taxa.valor) || 0), 0)
+      : 0;
+    
+    // Usar cálculos precisos
+    return preciseCurrency.add(
+      totalEntradas,
+      totalCheques,
+      totalTaxas,
+      Number(totalEnviosCorreios) || 0
+    );
+  }, [totalEntradas, entries.cheques, entries.cheque, entries.taxas, totalEnviosCorreios]);
+
+  // Verificar alertas automaticamente (depois de totalEntradasCompleto estar definido)
+  useEffect(() => {
+    const checkAlerts = () => {
+      // Verificar meta diária (usar totalEntradasCompleto para consistência)
+      const metaAlert = cashFlowAlertsService.checkDailyGoal(totalEntradasCompleto, dailyGoal);
+      if (metaAlert) {
+        cashFlowAlertsService.addAlert(metaAlert);
+        // Mostrar toast apenas se for meta atingida (não apenas próximo)
+        if (metaAlert.type === 'success') {
+          showToast(metaAlert.type, metaAlert.title, metaAlert.message);
+        }
+      }
+
+      // Verificar saldo negativo
+      const saldoAlert = cashFlowAlertsService.checkNegativeBalance(total);
+      if (saldoAlert) {
+        cashFlowAlertsService.addAlert(saldoAlert);
+        showToast(saldoAlert.type, saldoAlert.title, saldoAlert.message);
+        
+        // Disparar webhook de alerta criado
+        webhookService.triggerEvent('cashflow.alert_created', {
+          type: saldoAlert.type,
+          category: saldoAlert.category,
+          title: saldoAlert.title,
+          message: saldoAlert.message
+        }, { userId: user || undefined });
+      }
+
+      // Verificar movimentação acima do normal
+      if (dailyHistory.length > 0) {
+        const averageTotal = dailyHistory.reduce((sum, record) => sum + (record.entradas || 0), 0) / dailyHistory.length;
+        const movimentacaoAlert = cashFlowAlertsService.checkHighMovement(totalEntradasCompleto, averageTotal);
+        if (movimentacaoAlert) {
+          cashFlowAlertsService.addAlert(movimentacaoAlert);
+        }
+      }
+
+      // Verificar último fechamento
+      const lastClose = dailyHistory.length > 0 
+        ? new Date(dailyHistory[dailyHistory.length - 1].date)
+        : undefined;
+      const fechamentoAlert = cashFlowAlertsService.createClosingReminder(lastClose);
+      if (fechamentoAlert) {
+        cashFlowAlertsService.addAlert(fechamentoAlert);
+      }
+    };
+
+    // Verificar a cada 30 segundos
+    const interval = setInterval(checkAlerts, 30000);
+    checkAlerts(); // Verificar imediatamente
+
+    return () => clearInterval(interval);
+  }, [total, dailyGoal, totalEntradasCompleto, dailyHistory, showToast, user]);
 
   // Backup automático diário
   useEffect(() => {
@@ -428,23 +531,41 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   }, []);
 
   const previousDayRecord = useMemo(() => {
-    return dailyHistory.find(record => record.date === yesterdayKey) || null;
-  }, [dailyHistory, yesterdayKey]);
+    // Primeiro tentar encontrar registro de ontem
+    const yesterdayRecord = dailyHistory.find(record => record.date === yesterdayKey);
+    if (yesterdayRecord) return yesterdayRecord;
+    
+    // Se não encontrou, usar o último registro fechado (mais recente antes de hoje)
+    if (dailyHistory.length > 0) {
+      const sorted = [...dailyHistory]
+        .filter(record => record.date < todayKey)
+        .sort((a, b) => b.date.localeCompare(a.date));
+      return sorted[0] || null;
+    }
+    
+    return null;
+  }, [dailyHistory, yesterdayKey, todayKey]);
 
   const progressPercent = useMemo(() => {
     if (dailyGoal <= 0) return 0;
-    return Math.min((totalEntradas / dailyGoal) * 100, 130);
-  }, [dailyGoal, totalEntradas]);
+    return Math.min((totalEntradasCompleto / dailyGoal) * 100, 130);
+  }, [dailyGoal, totalEntradasCompleto]);
 
   const variationValor = useMemo(() => {
     if (!previousDayRecord) return null;
-    return totalEntradas - previousDayRecord.entradas;
-  }, [previousDayRecord, totalEntradas]);
+    // Usar o mesmo cálculo usado no fechamento para comparação correta
+    return totalEntradasCompleto - previousDayRecord.entradas;
+  }, [previousDayRecord, totalEntradasCompleto]);
 
   const variationPercent = useMemo(() => {
-    if (!previousDayRecord || previousDayRecord.entradas === 0 || variationValor === null) return null;
+    if (!previousDayRecord || variationValor === null) return null;
+    // Se o valor anterior é 0, não podemos calcular percentual
+    if (previousDayRecord.entradas === 0) {
+      // Se hoje temos valor e ontem era 0, considerar como 100% de aumento
+      return totalEntradasCompleto > 0 ? 100 : 0;
+    }
     return (variationValor / previousDayRecord.entradas) * 100;
-  }, [variationValor, previousDayRecord]);
+  }, [variationValor, previousDayRecord, totalEntradasCompleto]);
 
   const lastClosingRecord = useMemo(() => {
     if (dailyHistory.length === 0) return null;
@@ -454,12 +575,22 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
 
   const handleDailyGoalSave = () => {
     const numeric = Number(dailyGoalDraft);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
+    if (!Number.isFinite(numeric) || numeric <= 0 || isNaN(numeric)) {
       setDailyGoal(5000);
       setDailyGoalDraft('5000');
+      setNotification({
+        type: 'error',
+        message: 'Valor inválido para meta diária. Definindo valor padrão de R$ 5.000,00.',
+        isVisible: true
+      });
     } else {
-      setDailyGoal(numeric);
-      setDailyGoalDraft(String(numeric));
+      setDailyGoal(Math.round(numeric * 100) / 100); // Arredondar para 2 casas decimais
+      setDailyGoalDraft(String(Math.round(numeric * 100) / 100));
+      setNotification({
+        type: 'success',
+        message: 'Meta diária atualizada com sucesso!',
+        isVisible: true
+      });
     }
     setIsEditingDailyGoal(false);
   };
@@ -485,14 +616,9 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       ? entries.taxas.reduce((sum, taxa) => sum + (Number(taxa.valor) || 0), 0)
       : 0;
     
-    const totalEntradas = 
-      (Number(entries.dinheiro) || 0) + 
-      (Number(entries.fundoCaixa) || 0) + 
-      (Number(entries.cartao) || 0) + 
-      (Number(entries.cartaoLink) || 0) + 
-      (Number(entries.boletos) || 0) + 
-      (Number(entries.pixMaquininha) || 0) + 
-      (Number(entries.pixConta) || 0) +
+    // Usar o totalEntradas do hook que já inclui todos os campos (incluindo os novos: Outros, Brindes, Crediário, Cartão Presente, Cash Back)
+    // E adicionar cheques, taxas e envios de correios que são calculados separadamente
+    const totalEntradasCalculado = totalEntradas + 
       totalChequesFechamento +
       totalTaxasFechamento +
       (Number(totalEnviosCorreios) || 0);
@@ -530,6 +656,11 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       `Boletos: ${formatCurrency(entries.boletos)}\n` +
       `PIX Maquininha: ${formatCurrency(entries.pixMaquininha)}\n` +
       `PIX Conta: ${formatCurrency(entries.pixConta)}\n` +
+      ((totalOutrosLancamentos || entries.outros || 0) > 0 ? `Outros: ${formatCurrency(totalOutrosLancamentos || entries.outros || 0)}\n` : '') +
+      (totalBrindesLancamentos > 0 ? `Brindes: ${formatCurrency(totalBrindesLancamentos)}\n` : '') +
+      ((entries.crediario || 0) > 0 ? `Crediário: ${formatCurrency(entries.crediario || 0)}\n` : '') +
+      ((entries.cartaoPresente || 0) > 0 ? `Cartão Presente: ${formatCurrency(entries.cartaoPresente || 0)}\n` : '') +
+      ((entries.cashBack || 0) > 0 ? `Cash Back: ${formatCurrency(entries.cashBack || 0)}\n` : '') +
       (totalChequesFechamento > 0 ? `Cheques: ${formatCurrency(totalChequesFechamento)}\n` : '') +
       (totalTaxasFechamento > 0 ? `Taxas: ${formatCurrency(totalTaxasFechamento)}\n` : '') +
       `Correios/Frete: ${formatCurrency(totalEnviosCorreios)}\n` +
@@ -954,6 +1085,26 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
     if (!checkHighValues()) {
       return;
     }
+    
+    // Calcular total de cheques com precisão
+    const totalChequesFechamento = Array.isArray(entries.cheques)
+      ? entries.cheques.reduce((sum, cheque) => preciseCurrency.add(sum, Number(cheque.valor) || 0), 0)
+      : (Number(entries.cheque) || 0);
+
+    // Calcular total de taxas com precisão
+    const totalTaxasFechamento = Array.isArray(entries.taxas)
+      ? entries.taxas.reduce((sum, taxa) => preciseCurrency.add(sum, Number(taxa.valor) || 0), 0)
+      : 0;
+    
+    // Usar o totalEntradas do hook que já inclui todos os campos (incluindo os novos: Outros, Brindes, Crediário, Cartão Presente, Cash Back)
+    // E adicionar cheques, taxas e envios de correios que são calculados separadamente com precisão
+    const totalEntradasCalculado = preciseCurrency.add(
+      totalEntradas,
+      totalChequesFechamento,
+      totalTaxasFechamento,
+      Number(totalEnviosCorreios) || 0
+    );
+    
     // Registrar fechamento no log de auditoria
     if (user) {
       cashFlowAuditService.logAction(
@@ -964,8 +1115,8 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
         `fechamento-${todayKey}`,
         undefined,
         undefined,
-        { totalEntradas, totalSaidas: totalSaidasCalculado, saldo: total },
-        `Fechamento de caixa - Entradas: ${formatCurrency(totalEntradas)}, Saídas: ${formatCurrency(totalSaidasCalculado)}, Saldo: ${formatCurrency(total)}`
+        { totalEntradas: totalEntradasCalculado, totalSaidas: totalSaidasCalculado, saldo: total },
+        `Fechamento de caixa - Entradas: ${formatCurrency(totalEntradasCalculado)}, Saídas: ${formatCurrency(totalSaidasCalculado)}, Saldo: ${formatCurrency(total)}`
       );
     }
 
@@ -976,7 +1127,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
         exits,
         cancelamentos: cancelamentos || [],
         total,
-        totalEntradas,
+        totalEntradas: totalEntradasCalculado,
         totalSaidas: totalSaidasCalculado,
         fundoCaixa: entries.fundoCaixa || 400,
         dailyGoal
@@ -1026,7 +1177,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
         ...filtered,
         {
           date: todayKey,
-          entradas: totalEntradas,
+          entradas: totalEntradasCalculado,
           saidas: totalSaidasCalculado,
           saldo: total
         }
@@ -1040,7 +1191,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       const fechamentoCompleto = {
         date: todayKey,
         timestamp: new Date().toISOString(),
-        entradas: totalEntradas,
+        entradas: totalEntradasCalculado,
         saidas: totalSaidasCalculado,
         saldo: total,
         detalhes: {
@@ -1103,7 +1254,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       // Disparar webhook de fechamento
       webhookService.triggerEvent('cashflow.closed', {
         date: todayKey,
-        totalEntradas,
+        totalEntradas: totalEntradasCalculado,
         totalSaidas: totalSaidasCalculado,
         saldo: total
       }, { userId: user || undefined });
@@ -1111,6 +1262,165 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       // Erro ao salvar fechamento - não crítico
     }
   }, [generateFechamentoFile, entries, exits, total, cancelamentos, totalEntradas, totalSaidasCalculado, todayKey, user]);
+
+  // Função para fechamento parcial (troca de operador)
+  const handleFechamentoParcial = useCallback(() => {
+    if (!fechamentoParcialData.operadorSaida || !fechamentoParcialData.operadorEntrada) {
+      setNotification({
+        type: 'error',
+        message: 'Por favor, preencha os nomes dos operadores.',
+        isVisible: true
+      });
+      return;
+    }
+
+    // Calcular totais com precisão
+    const totalChequesFechamento = Array.isArray(entries.cheques)
+      ? entries.cheques.reduce((sum, cheque) => preciseCurrency.add(sum, Number(cheque.valor) || 0), 0)
+      : (Number(entries.cheque) || 0);
+
+    const totalTaxasFechamento = Array.isArray(entries.taxas)
+      ? entries.taxas.reduce((sum, taxa) => preciseCurrency.add(sum, Number(taxa.valor) || 0), 0)
+      : 0;
+    
+    const totalEntradasCalculado = preciseCurrency.add(
+      totalEntradas,
+      totalChequesFechamento,
+      totalTaxasFechamento,
+      Number(totalEnviosCorreios) || 0
+    );
+
+    // Criar registro de fechamento parcial
+    const fechamentoParcial: import('../types').FechamentoParcial = {
+      id: `fechamento_parcial_${Date.now()}`,
+      dataHoraInicio: new Date().toISOString(),
+      dataHoraFim: new Date().toISOString(),
+      operadorSaida: fechamentoParcialData.operadorSaida,
+      operadorEntrada: fechamentoParcialData.operadorEntrada,
+      saldoInicial: total,
+      saldoFinal: total,
+      totalEntradas: totalEntradasCalculado,
+      totalSaidas: totalSaidasCalculado,
+      observacoes: fechamentoParcialData.observacoes,
+      entries: { ...entries },
+      exits: { ...exits },
+      cancelamentos: cancelamentos || [],
+      assinaturaOperadorSaida: fechamentoParcialData.operadorSaida,
+      assinaturaOperadorEntrada: fechamentoParcialData.operadorEntrada
+    };
+
+    // Salvar fechamento parcial no histórico
+    try {
+      const storedFechamentosParciais = localStorage.getItem('cashflow_fechamentos_parciais');
+      let fechamentosParciais: any[] = [];
+      
+      if (storedFechamentosParciais) {
+        try {
+          fechamentosParciais = JSON.parse(storedFechamentosParciais);
+          if (!Array.isArray(fechamentosParciais)) fechamentosParciais = [];
+        } catch (e) {
+          fechamentosParciais = [];
+        }
+      }
+
+      fechamentosParciais.push(fechamentoParcial);
+      
+      // Manter apenas os últimos 90 dias
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      fechamentosParciais = fechamentosParciais.filter((f: any) => {
+        const fechaDate = new Date(f.dataHoraInicio);
+        return fechaDate >= ninetyDaysAgo;
+      });
+
+      localStorage.setItem('cashflow_fechamentos_parciais', JSON.stringify(fechamentosParciais));
+    } catch (error) {
+      console.error('Erro ao salvar fechamento parcial:', error);
+    }
+
+    // Registrar no log de auditoria
+    if (user) {
+      cashFlowAuditService.logAction(
+        user,
+        user,
+        'partial_close',
+        'fechamento_parcial',
+        fechamentoParcial.id,
+        undefined,
+        undefined,
+        {
+          operadorSaida: fechamentoParcialData.operadorSaida,
+          operadorEntrada: fechamentoParcialData.operadorEntrada,
+          totalEntradas: totalEntradasCalculado,
+          totalSaidas: totalSaidasCalculado,
+          saldo: total
+        },
+        `Fechamento parcial - Operador saída: ${fechamentoParcialData.operadorSaida}, Operador entrada: ${fechamentoParcialData.operadorEntrada}`
+      );
+    }
+
+    // Gerar arquivo de fechamento parcial
+    const date = new Date();
+    const dateStr = date.toLocaleDateString('pt-BR');
+    const timeStr = date.toLocaleTimeString('pt-BR');
+    
+    const content = `FECHAMENTO PARCIAL DE CAIXA - ${dateStr} ${timeStr}\n\n` +
+      `OPERADOR SAÍDA: ${fechamentoParcialData.operadorSaida}\n` +
+      `OPERADOR ENTRADA: ${fechamentoParcialData.operadorEntrada}\n` +
+      `DATA/HORA INÍCIO: ${new Date(fechamentoParcial.dataHoraInicio).toLocaleString('pt-BR')}\n` +
+      `DATA/HORA FIM: ${new Date(fechamentoParcial.dataHoraFim).toLocaleString('pt-BR')}\n\n` +
+      `SALDO INICIAL: ${formatCurrency(fechamentoParcial.saldoInicial)}\n` +
+      `TOTAL ENTRADAS: ${formatCurrency(totalEntradasCalculado)}\n` +
+      `TOTAL SAÍDAS: ${formatCurrency(totalSaidasCalculado)}\n` +
+      `SALDO FINAL: ${formatCurrency(fechamentoParcial.saldoFinal)}\n\n` +
+      (fechamentoParcialData.observacoes ? `OBSERVAÇÕES:\n${fechamentoParcialData.observacoes}\n\n` : '') +
+      `---\n` +
+      `Este fechamento parcial foi gerado para controle de troca de operador.\n` +
+      `O caixa permanece aberto para continuidade do trabalho.\n` +
+      `*Arquivo gerado automaticamente pelo Sistema de Movimento de Caixa*\n` +
+      `*Webyte | Tecnologia Laravel*`;
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fechamento_parcial_${dateStr.replace(/\//g, '_')}_${timeStr.replace(/:/g, '_')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Notificação de sucesso
+    setNotification({
+      type: 'success',
+      message: `Fechamento parcial realizado! Operador ${fechamentoParcialData.operadorSaida} saiu, ${fechamentoParcialData.operadorEntrada} entrou. Arquivo gerado.`,
+      isVisible: true
+    });
+
+    // Fechar modal
+    setShowFechamentoParcialModal(false);
+    
+    // Atualizar operador atual
+    if (fechamentoParcialData.operadorEntrada) {
+      // Aqui você pode atualizar o contexto de autenticação se necessário
+    }
+
+    // Resetar dados do formulário parcial
+    setFechamentoParcialData({
+      operadorSaida: fechamentoParcialData.operadorEntrada || '',
+      operadorEntrada: '',
+      observacoes: ''
+    });
+
+    // Disparar webhook
+    webhookService.triggerEvent('cashflow.partial_closed', {
+      operadorSaida: fechamentoParcialData.operadorSaida,
+      operadorEntrada: fechamentoParcialData.operadorEntrada,
+      totalEntradas: totalEntradasCalculado,
+      totalSaidas: totalSaidasCalculado,
+      saldo: total
+    }, { userId: user || undefined });
+  }, [fechamentoParcialData, entries, exits, total, cancelamentos, totalEntradas, totalSaidasCalculado, totalEnviosCorreios, user]);
 
   // Aplicar template
   const handleApplyTemplate = useCallback((template: ClosingTemplate) => {
@@ -1183,6 +1493,39 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       });
     }
     
+    // Validação Crediário
+    if ((entries.crediario || 0) > 0) {
+      const isValid = validateCrediarioValues();
+      items.push({
+        id: 'crediario',
+        label: 'Crediário - Valores conferem',
+        status: isValid ? 'ok' : 'error',
+        message: isValid ? 'Valores dos clientes conferem com o total' : 'Valores dos clientes não conferem com o total'
+      });
+    }
+    
+    // Validação Cartão Presente
+    if ((entries.cartaoPresente || 0) > 0) {
+      const isValid = validateCartaoPresenteValues();
+      items.push({
+        id: 'cartao-presente',
+        label: 'Cartão Presente - Valores conferem',
+        status: isValid ? 'ok' : 'error',
+        message: isValid ? 'Valores dos clientes conferem com o total' : 'Valores dos clientes não conferem com o total'
+      });
+    }
+    
+    // Validação Cash Back
+    if ((entries.cashBack || 0) > 0) {
+      const isValid = validateCashBackValues();
+      items.push({
+        id: 'cash-back',
+        label: 'Cash Back - Valores conferem',
+        status: isValid ? 'ok' : 'error',
+        message: isValid ? 'Valores dos clientes conferem com o total' : 'Valores dos clientes não conferem com o total'
+      });
+    }
+    
     // Validação Saída (Retirada)
     if (exits.saida > 0) {
       const isValid = validateSaidaValues();
@@ -1207,7 +1550,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
     const hasErrors = items.some(item => item.status === 'error');
     
     return { items, allOk, hasErrors };
-  }, [entries, exits, totalEntradas, validatePixContaValues, validateCartaoLinkValues, validateBoletosValues, validateSaidaValues]);
+  }, [entries, exits, totalEntradas, validatePixContaValues, validateCartaoLinkValues, validateBoletosValues, validateCrediarioValues, validateCartaoPresenteValues, validateCashBackValues, validateSaidaValues]);
   
   // Estados para múltiplas devoluções
   const [novaDevolucaoNome, setNovaDevolucaoNome] = useState('');
@@ -1238,9 +1581,10 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
 
   // Memoizar cálculos pesados para evitar re-renderizações
   const totalPixContaClientes = useMemo(() => {
-    return Array.isArray(entries.pixContaClientes) 
-      ? entries.pixContaClientes.reduce((sum, cliente) => sum + (Number(cliente.valor) || 0), 0)
-      : 0;
+    if (!Array.isArray(entries.pixContaClientes)) return 0;
+    return entries.pixContaClientes.reduce((sum, cliente) => {
+      return preciseCurrency.add(sum, Number(cliente.valor) || 0);
+    }, 0);
   }, [entries.pixContaClientes]);
 
   const totalCartaoLinkClientes = useMemo(() => {
@@ -1254,6 +1598,24 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       ? entries.boletosClientes.reduce((sum, cliente) => sum + (Number(cliente.valor) || 0), 0)
       : 0;
   }, [entries.boletosClientes]);
+
+  const totalCrediarioClientes = useMemo(() => {
+    return Array.isArray(entries.crediarioClientes)
+      ? entries.crediarioClientes.reduce((sum, cliente) => sum + (Number(cliente.valor) || 0), 0)
+      : 0;
+  }, [entries.crediarioClientes]);
+
+  const totalCartaoPresenteClientes = useMemo(() => {
+    return Array.isArray(entries.cartaoPresenteClientes)
+      ? entries.cartaoPresenteClientes.reduce((sum, cliente) => sum + (Number(cliente.valor) || 0), 0)
+      : 0;
+  }, [entries.cartaoPresenteClientes]);
+
+  const totalCashBackClientes = useMemo(() => {
+    return Array.isArray(entries.cashBackClientes)
+      ? entries.cashBackClientes.reduce((sum, cliente) => sum + (Number(cliente.valor) || 0), 0)
+      : 0;
+  }, [entries.cashBackClientes]);
 
   // Calcular total de taxas
   const totalTaxas = useMemo(() => {
@@ -1281,6 +1643,206 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
     'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
     'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
   ];
+
+  // Carregar templates de saídas do localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = localStorage.getItem('cashflow_saidas_templates');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setSaidasTemplates(parsed);
+        }
+      } catch (e) {
+        // Ignorar erro
+      }
+    }
+  }, []);
+
+  // Salvar templates de saídas
+  useEffect(() => {
+    if (typeof window === 'undefined' || saidasTemplates.length === 0) return;
+    localStorage.setItem('cashflow_saidas_templates', JSON.stringify(saidasTemplates));
+  }, [saidasTemplates]);
+
+  // Carregar templates de entradas do localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = localStorage.getItem('cashflow_entradas_templates');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setEntradasTemplates(parsed);
+        }
+      } catch (e) {
+        // Ignorar erro
+      }
+    }
+  }, []);
+
+  // Salvar templates de entradas
+  useEffect(() => {
+    if (typeof window === 'undefined' || entradasTemplates.length === 0) return;
+    localStorage.setItem('cashflow_entradas_templates', JSON.stringify(entradasTemplates));
+  }, [entradasTemplates]);
+
+  // Calcular resumo de entradas por categoria
+  const entradasResumo = useMemo(() => {
+    const totalCheques = Array.isArray(entries.cheques)
+      ? entries.cheques.reduce((sum, cheque) => sum + (Number(cheque.valor) || 0), 0)
+      : (Number(entries.cheque) || 0);
+
+    return {
+      dinheiro: entries.dinheiro || 0,
+      fundoCaixa: entries.fundoCaixa || 0,
+      cartao: entries.cartao || 0,
+      cartaoLink: entries.cartaoLink || 0,
+      pixMaquininha: entries.pixMaquininha || 0,
+      pixConta: entries.pixConta || 0,
+      boletos: entries.boletos || 0,
+      cheques: totalCheques,
+      taxas: totalTaxas,
+      outros: totalOutrosLancamentos || entries.outros || 0,
+      brindes: totalBrindesLancamentos || 0,
+      crediario: entries.crediario || 0,
+      cartaoPresente: entries.cartaoPresente || 0,
+      cashBack: entries.cashBack || 0,
+      correios: Number(totalEnviosCorreios) || 0,
+      total: totalEntradasCompleto
+    };
+  }, [entries, totalTaxas, totalOutrosLancamentos, totalBrindesLancamentos, totalEnviosCorreios, totalEntradasCompleto]);
+
+  // Calcular resumo de saídas por categoria
+  const saidasResumo = useMemo(() => {
+    const totalVales = Array.isArray(exits.valesFuncionarios)
+      ? exits.valesFuncionarios.reduce((sum, v) => sum + (Number(v.valor) || 0), 0)
+      : 0;
+    
+    const totalDevolucoes = Array.isArray(exits.devolucoes)
+      ? exits.devolucoes.reduce((sum, d) => sum + (Number(d.valor) || 0), 0)
+      : 0;
+    
+    const totalCorreios = Array.isArray(exits.enviosCorreios)
+      ? exits.enviosCorreios.reduce((sum, e) => sum + (Number(e.valor) || 0), 0)
+      : 0;
+    
+    const totalTransportadora = Array.isArray(exits.enviosTransportadora)
+      ? exits.enviosTransportadora.reduce((sum, t) => sum + (Number(t.valor) || 0), 0)
+      : 0;
+
+    return {
+      descontos: exits.descontos || 0,
+      retiradas: exits.saida || 0,
+      devolucoes: totalDevolucoes,
+      vales: totalVales,
+      puxador: exits.puxadorValor || 0,
+      correios: totalCorreios,
+      transportadora: totalTransportadora,
+      total: totalSaidasCalculado
+    };
+  }, [exits, totalSaidasCalculado]);
+
+  // Filtrar saídas baseado na busca e categoria
+  const saidasFiltradas = useMemo(() => {
+    let items: Array<{ tipo: string; descricao: string; valor: number; categoria: string }> = [];
+
+    // Adicionar descontos
+    if (exits.descontos > 0) {
+      items.push({
+        tipo: 'desconto',
+        descricao: 'Descontos',
+        valor: exits.descontos,
+        categoria: 'operacional'
+      });
+    }
+
+    // Adicionar retiradas
+    if (exits.saida > 0) {
+      items.push({
+        tipo: 'saida',
+        descricao: 'Saída (Retirada)',
+        valor: exits.saida,
+        categoria: 'operacional'
+      });
+    }
+
+    // Adicionar devoluções
+    if (Array.isArray(exits.devolucoes)) {
+      exits.devolucoes.forEach((d, i) => {
+        items.push({
+          tipo: 'devolucao',
+          descricao: `Devolução: ${d.nome || 'Cliente ' + (i + 1)}`,
+          valor: d.valor,
+          categoria: 'operacional'
+        });
+      });
+    }
+
+    // Adicionar vales
+    if (Array.isArray(exits.valesFuncionarios)) {
+      exits.valesFuncionarios.forEach((v) => {
+        items.push({
+          tipo: 'vale',
+          descricao: `Vale: ${v.nome}`,
+          valor: v.valor,
+          categoria: 'funcionarios'
+        });
+      });
+    }
+
+    // Adicionar puxador
+    if (exits.puxadorValor > 0) {
+      items.push({
+        tipo: 'puxador',
+        descricao: `Comissão Puxador: ${exits.puxadorNome || 'N/A'}`,
+        valor: exits.puxadorValor,
+        categoria: 'funcionarios'
+      });
+    }
+
+    // Adicionar correios
+    if (Array.isArray(exits.enviosCorreios)) {
+      exits.enviosCorreios.forEach((e) => {
+        items.push({
+          tipo: 'correios',
+          descricao: `Correios ${e.tipo}: ${e.cliente}`,
+          valor: e.valor,
+          categoria: 'logistica'
+        });
+      });
+    }
+
+    // Adicionar transportadora
+    if (Array.isArray(exits.enviosTransportadora)) {
+      exits.enviosTransportadora.forEach((t) => {
+        items.push({
+          tipo: 'transportadora',
+          descricao: `Transportadora: ${t.nomeCliente}`,
+          valor: t.valor,
+          categoria: 'logistica'
+        });
+      });
+    }
+
+    // Aplicar filtros
+    let filtered = items;
+
+    if (saidasSearchTerm) {
+      const search = saidasSearchTerm.toLowerCase();
+      filtered = filtered.filter(item => 
+        item.descricao.toLowerCase().includes(search) ||
+        formatCurrency(item.valor).toLowerCase().includes(search)
+      );
+    }
+
+    if (saidasFilterCategory !== 'all') {
+      filtered = filtered.filter(item => item.categoria === saidasFilterCategory);
+    }
+
+    return filtered;
+  }, [exits, saidasSearchTerm, saidasFilterCategory]);
   
   // Estados para transportadora
   const [novoEnvioTransportadoraNome, setNovoEnvioTransportadoraNome] = useState('');
@@ -1304,6 +1866,29 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   const [novoBoletosClienteNome, setNovoBoletosClienteNome] = useState('');
   const [novoBoletosClienteValor, setNovoBoletosClienteValor] = useState(0);
   const [novoBoletosClienteParcelas, setNovoBoletosClienteParcelas] = useState(1);
+  
+  // Estados para múltiplos clientes Crediário
+  const [novoCrediarioClienteNome, setNovoCrediarioClienteNome] = useState('');
+  const [novoCrediarioClienteValor, setNovoCrediarioClienteValor] = useState(0);
+  const [novoCrediarioClienteParcelas, setNovoCrediarioClienteParcelas] = useState(1);
+  
+  // Estados para múltiplos clientes Cartão Presente
+  const [novoCartaoPresenteClienteNome, setNovoCartaoPresenteClienteNome] = useState('');
+  const [novoCartaoPresenteClienteValor, setNovoCartaoPresenteClienteValor] = useState(0);
+  const [novoCartaoPresenteClienteParcelas, setNovoCartaoPresenteClienteParcelas] = useState(1);
+  
+  // Estados para múltiplos clientes Cash Back
+  const [novoCashBackClienteNome, setNovoCashBackClienteNome] = useState('');
+  const [novoCashBackClienteCPF, setNovoCashBackClienteCPF] = useState('');
+  const [novoCashBackClienteValor, setNovoCashBackClienteValor] = useState(0);
+  
+  // Estados para lançamentos de Outros
+  const [novoOutroDescricao, setNovoOutroDescricao] = useState('');
+  const [novoOutroValor, setNovoOutroValor] = useState(0);
+  
+  // Estados para lançamentos de Brindes
+  const [novoBrindeDescricao, setNovoBrindeDescricao] = useState('');
+  const [novoBrindeValor, setNovoBrindeValor] = useState(0);
   
   // Estados para cheques
   const [novoChequeBanco, setNovoChequeBanco] = useState('');
@@ -1340,12 +1925,18 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
     }
   }, [isDemo, timeInfo.isExpired, showDemoExpiredModal]);
 
+
   const handleEntryChange = (field: keyof typeof entries, value: string | number | any[]) => {
     const oldValue = entries[field];
-    updateEntries(field, value);
+    // Normalizar valores numéricos para evitar problemas de precisão
+    let normalizedValue = value;
+    if (typeof value === 'number' && !isNaN(value) && isFinite(value)) {
+      normalizedValue = preciseCurrency.round(value);
+    }
+    updateEntries(field, normalizedValue);
     
     // Registrar alteração no log de auditoria
-    if (user && oldValue !== value) {
+    if (user && oldValue !== normalizedValue) {
       cashFlowAuditService.logAction(
         user,
         user,
@@ -1354,11 +1945,145 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
         `entry-${field}`,
         field as string,
         oldValue,
-        value,
-        `Alteração em ${field}: ${oldValue} → ${value}`
+        normalizedValue,
+        `Alteração em ${field}: ${oldValue} → ${normalizedValue}`
       );
     }
   };
+
+  // Filtrar entradas baseado na busca e categoria
+  const entradasFiltradas = useMemo(() => {
+    let items: Array<{ tipo: string; descricao: string; valor: number; categoria: string }> = [];
+
+    // Adicionar dinheiro
+    if (entries.dinheiro > 0) {
+      items.push({
+        tipo: 'dinheiro',
+        descricao: 'Dinheiro',
+        valor: entries.dinheiro,
+        categoria: 'fisico'
+      });
+    }
+
+    // Adicionar cartão
+    if (entries.cartao > 0) {
+      items.push({
+        tipo: 'cartao',
+        descricao: 'Cartão',
+        valor: entries.cartao,
+        categoria: 'digital'
+      });
+    }
+
+    // Adicionar PIX
+    if (entries.pixMaquininha > 0 || entries.pixConta > 0) {
+      items.push({
+        tipo: 'pix',
+        descricao: `PIX (Maquininha: ${formatCurrency(entries.pixMaquininha)}, Conta: ${formatCurrency(entries.pixConta)})`,
+        valor: entries.pixMaquininha + entries.pixConta,
+        categoria: 'digital'
+      });
+    }
+
+    // Adicionar boletos
+    if (entries.boletos > 0) {
+      items.push({
+        tipo: 'boleto',
+        descricao: 'Boletos',
+        valor: entries.boletos,
+        categoria: 'digital'
+      });
+    }
+
+    // Adicionar cheques
+    const totalCheques = Array.isArray(entries.cheques)
+      ? entries.cheques.reduce((sum, cheque) => sum + (Number(cheque.valor) || 0), 0)
+      : (Number(entries.cheque) || 0);
+    if (totalCheques > 0) {
+      items.push({
+        tipo: 'cheque',
+        descricao: 'Cheques',
+        valor: totalCheques,
+        categoria: 'fisico'
+      });
+    }
+
+    // Adicionar outros
+    if (totalOutrosLancamentos > 0 || entries.outros > 0) {
+      items.push({
+        tipo: 'outros',
+        descricao: 'Outros',
+        valor: totalOutrosLancamentos || entries.outros || 0,
+        categoria: 'outros'
+      });
+    }
+
+    // Aplicar filtros
+    let filtered = items;
+
+    if (entradasSearchTerm) {
+      const search = entradasSearchTerm.toLowerCase();
+      filtered = filtered.filter(item => 
+        item.descricao.toLowerCase().includes(search) ||
+        formatCurrency(item.valor).toLowerCase().includes(search)
+      );
+    }
+
+    if (entradasFilterCategory !== 'all') {
+      filtered = filtered.filter(item => item.categoria === entradasFilterCategory);
+    }
+
+    return filtered;
+  }, [entries, entradasSearchTerm, entradasFilterCategory, totalOutrosLancamentos]);
+
+  // Função para aplicar template de entrada
+  const aplicarTemplateEntrada = useCallback((template: typeof entradasTemplates[0]) => {
+    switch (template.tipo) {
+      case 'dinheiro':
+        handleEntryChange('dinheiro', template.valor);
+        break;
+      case 'cartao':
+        handleEntryChange('cartao', template.valor);
+        break;
+      case 'pix':
+        handleEntryChange('pixConta', template.valor);
+        break;
+      case 'boleto':
+        handleEntryChange('boletos', template.valor);
+        break;
+      case 'cheque':
+        handleEntryChange('cheque', template.valor);
+        break;
+      case 'outros':
+        handleEntryChange('outros', template.valor);
+        break;
+    }
+    
+    setNotification({
+      type: 'success',
+      message: `Template "${template.nome}" aplicado com sucesso!`,
+      isVisible: true
+    });
+  }, [handleEntryChange]);
+
+  // Função para salvar template de entrada
+  const salvarTemplateEntrada = useCallback((nome: string, tipo: 'dinheiro' | 'cartao' | 'pix' | 'boleto' | 'cheque' | 'outros', valor: number, descricao: string) => {
+    const novoTemplate = {
+      id: `template_${Date.now()}`,
+      nome,
+      categoria: tipo === 'dinheiro' || tipo === 'cheque' ? 'fisico' : tipo === 'cartao' || tipo === 'pix' || tipo === 'boleto' ? 'digital' : 'outros',
+      descricao,
+      valor,
+      tipo
+    };
+    
+    setEntradasTemplates(prev => [...prev, novoTemplate]);
+    setNotification({
+      type: 'success',
+      message: 'Template salvo com sucesso!',
+      isVisible: true
+    });
+  }, []);
 
   const handleExitChange = (field: keyof typeof exits, value: any) => {
     const oldValue = exits[field];
@@ -1380,6 +2105,78 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
     }
   };
 
+  // Alternar bloqueio/desbloqueio do percentual (botão cadeado)
+  const handleTogglePuxadorLock = useCallback(() => {
+    if (canEditPuxadorPercent) {
+      // Bloqueia e volta para 4%
+      setCanEditPuxadorPercent(false);
+      handleExitChange('puxadorPorcentagem', 4);
+      setNotification({
+        type: 'info',
+        message: 'Percentual do puxador bloqueado e redefinido para 4%.',
+        isVisible: true
+      });
+      return;
+    }
+    // Se está bloqueado, abre modal de PIM para liberar
+    setShowPuxadorPimModal(true);
+    setPuxadorPimCode('');
+    setPuxadorPimError('');
+  }, [canEditPuxadorPercent, handleExitChange]);
+
+  // Função para aplicar template (depois de handleExitChange estar definido)
+  const aplicarTemplateSaida = useCallback((template: typeof saidasTemplates[0]) => {
+    switch (template.tipo) {
+      case 'desconto':
+        handleExitChange('descontos', template.valor);
+        break;
+      case 'saida':
+        handleExitChange('saida', template.valor);
+        break;
+      case 'vale':
+        const novosVales = [...(exits.valesFuncionarios || []), {
+          nome: template.descricao.replace('Vale: ', ''),
+          valor: template.valor
+        }];
+        handleExitChange('valesFuncionarios', novosVales);
+        break;
+      case 'devolucao':
+        const novasDevolucoes = [...(exits.devolucoes || []), {
+          nome: template.descricao.replace('Devolução: ', ''),
+          cpf: '',
+          valor: template.valor,
+          incluidoNoMovimento: false
+        }];
+        handleExitChange('devolucoes', novasDevolucoes);
+        break;
+    }
+    
+    setNotification({
+      type: 'success',
+      message: `Template "${template.nome}" aplicado com sucesso!`,
+      isVisible: true
+    });
+  }, [exits.valesFuncionarios, exits.devolucoes, handleExitChange]);
+
+  // Função para salvar template atual
+  const salvarTemplateSaida = useCallback((nome: string, tipo: 'desconto' | 'saida' | 'devolucao' | 'vale' | 'correios' | 'transportadora', valor: number, descricao: string) => {
+    const novoTemplate = {
+      id: `template_${Date.now()}`,
+      nome,
+      categoria: tipo === 'vale' ? 'funcionarios' : tipo === 'correios' || tipo === 'transportadora' ? 'logistica' : 'operacional',
+      descricao,
+      valor,
+      tipo
+    };
+    
+    setSaidasTemplates(prev => [...prev, novoTemplate]);
+    setNotification({
+      type: 'success',
+      message: 'Template salvo com sucesso!',
+      isVisible: true
+    });
+  }, []);
+
   const handleCurrencyInput = (
     field: keyof typeof entries | keyof typeof exits, 
     value: string, 
@@ -1398,9 +2195,9 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       return;
     }
     
-    // Converte para centavos e depois para reais
+    // Converte para centavos e depois para reais com precisão
     const cents = parseInt(numbers);
-    const reais = cents / 100;
+    const reais = preciseCurrency.fromCents(cents); // Usa função precisa para evitar problemas de ponto flutuante
     
     if (isEntry) {
       handleEntryChange(field as keyof typeof entries, reais);
@@ -1587,7 +2384,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
     if (novoPixContaClienteNome && novoPixContaClienteValor > 0) {
       const novoCliente = {
         nome: novoPixContaClienteNome,
-        valor: novoPixContaClienteValor
+        valor: preciseCurrency.round(novoPixContaClienteValor) // Normalizar valor para evitar problemas de precisão
       };
       const novosClientes = [...entries.pixContaClientes, novoCliente];
       updateEntries('pixContaClientes', novosClientes);
@@ -1644,6 +2441,71 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   const removerBoletosCliente = (index: number) => {
     const novosClientes = entries.boletosClientes.filter((_, i) => i !== index);
     updateEntries('boletosClientes', novosClientes);
+  };
+
+  // Função para formatar CPF
+  const formatCPF = (value: string) => {
+    let formatted = value.replace(/\D/g, '');
+    if (formatted.length <= 11) {
+      if (formatted.length > 9) {
+        formatted = formatted.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+      } else if (formatted.length > 6) {
+        formatted = formatted.replace(/(\d{3})(\d{3})(\d{3})/, '$1.$2.$3');
+      } else if (formatted.length > 3) {
+        formatted = formatted.replace(/(\d{3})(\d{3})/, '$1.$2');
+      }
+    }
+    return formatted;
+  };
+
+  // Função para adicionar cliente Crediário (wrapper local)
+  const handleAdicionarCrediarioCliente = () => {
+    if (novoCrediarioClienteNome && novoCrediarioClienteValor > 0) {
+      adicionarCrediarioCliente(novoCrediarioClienteNome, novoCrediarioClienteValor, novoCrediarioClienteParcelas);
+      setNovoCrediarioClienteNome('');
+      setNovoCrediarioClienteValor(0);
+      setNovoCrediarioClienteParcelas(1);
+    }
+  };
+
+  // Função para adicionar cliente Cartão Presente (wrapper local)
+  const handleAdicionarCartaoPresenteCliente = () => {
+    if (novoCartaoPresenteClienteNome && novoCartaoPresenteClienteValor > 0) {
+      adicionarCartaoPresenteCliente(novoCartaoPresenteClienteNome, novoCartaoPresenteClienteValor, novoCartaoPresenteClienteParcelas);
+      setNovoCartaoPresenteClienteNome('');
+      setNovoCartaoPresenteClienteValor(0);
+      setNovoCartaoPresenteClienteParcelas(1);
+    }
+  };
+
+  // Função para adicionar cliente Cash Back (wrapper local)
+  const handleAdicionarCashBackCliente = () => {
+    if (novoCashBackClienteNome && novoCashBackClienteCPF && novoCashBackClienteValor > 0) {
+      // Validar CPF (deve ter 11 dígitos)
+      const cpfLimpo = novoCashBackClienteCPF.replace(/\D/g, '');
+      if (cpfLimpo.length !== 11) {
+        setNotification({
+          type: 'error',
+          message: 'CPF deve ter 11 dígitos',
+          isVisible: true
+        });
+        return;
+      }
+      
+      const valorAtual = novoCashBackClienteValor;
+      const nomeAtual = novoCashBackClienteNome;
+      
+      adicionarCashBackCliente(nomeAtual, cpfLimpo, valorAtual);
+      setNovoCashBackClienteNome('');
+      setNovoCashBackClienteCPF('');
+      setNovoCashBackClienteValor(0);
+      
+      setNotification({
+        type: 'success',
+        message: `Cash Back de ${formatCurrency(valorAtual)} registrado para ${nomeAtual}. Disponível para desconto em próxima compra!`,
+        isVisible: true
+      });
+    }
   };
 
   // Função para adicionar nova saída retirada (legado - mantido para compatibilidade)
@@ -2282,6 +3144,74 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                   <span>Webhooks</span>
                 </button>
                 <button
+                  onClick={() => setShowCategoryManager(true)}
+                  className="flex items-center justify-center gap-1.5 bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-all duration-200 text-xs font-medium"
+                  title="Gestão de Categorias e Tags"
+                >
+                  <Filter className="w-4 h-4" />
+                  <span>Categorias</span>
+                </button>
+                <div className="relative group">
+                  <button
+                    onClick={() => {
+                      const data: CashFlowData = {
+                        entries,
+                        exits,
+                        total: totalFinal,
+                        date: new Date().toISOString(),
+                        cancelamentos: cancelamentos || []
+                      };
+                      exportService.exportToPDF(data, {
+                        includeDetails: true,
+                        companyInfo: companyConfig
+                      });
+                    }}
+                    className="flex items-center justify-center gap-1.5 bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-all duration-200 text-xs font-medium"
+                    title="Exportar PDF"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>PDF</span>
+                  </button>
+                  <div className="absolute right-0 top-full mt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                    <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-1 min-w-[120px]">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const data: CashFlowData = {
+                            entries,
+                            exits,
+                            total: totalFinal,
+                            date: new Date().toISOString(),
+                            cancelamentos: cancelamentos || []
+                          };
+                          exportService.exportToExcel(data);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        Excel
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const data: CashFlowData = {
+                            entries,
+                            exits,
+                            total: totalFinal,
+                            date: new Date().toISOString(),
+                            cancelamentos: cancelamentos || []
+                          };
+                          exportService.exportToCSV(data);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        CSV
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <button
                   onClick={toggleFullscreen}
                   className="flex items-center justify-center gap-1.5 bg-slate-600 text-white px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-all duration-200 text-xs font-medium"
                   title={isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}
@@ -2317,10 +3247,23 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                         <input
                           type="number"
                           min={0}
-                          step={100}
+                          step={0.01}
                           value={dailyGoalDraft}
-                          onChange={(e) => setDailyGoalDraft(e.target.value)}
-                          className="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // Permitir valores vazios temporariamente e validar depois
+                            if (value === '' || (!isNaN(Number(value)) && Number(value) >= 0)) {
+                              setDailyGoalDraft(value);
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const value = Number(e.target.value);
+                            if (isNaN(value) || value <= 0) {
+                              setDailyGoalDraft(String(dailyGoal));
+                            }
+                          }}
+                          className="w-32 px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          placeholder="Ex: 5000"
                         />
                         <button
                           onClick={handleDailyGoalSave}
@@ -2361,18 +3304,28 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <p className="text-xs text-gray-500">Progresso Hoje</p>
-                        <p className="text-xl font-bold text-gray-800">{formatCurrency(totalEntradas)}</p>
+                        <p className="text-xl font-bold text-gray-800">{formatCurrency(totalEntradasCompleto)}</p>
                       </div>
                       <span className="text-xs font-semibold text-indigo-600">{progressPercent.toFixed(0)}%</span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
                       <div
-                        className={`h-2 rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all`}
+                        className={`h-2 rounded-full transition-all ${
+                          progressPercent >= 100 
+                            ? 'bg-gradient-to-r from-emerald-500 to-green-500' 
+                            : progressPercent >= 75
+                            ? 'bg-gradient-to-r from-blue-500 to-indigo-500'
+                            : 'bg-gradient-to-r from-indigo-500 to-emerald-500'
+                        }`}
                         style={{ width: `${Math.min(progressPercent, 130)}%` }}
                       ></div>
                     </div>
                     <p className="text-[10px] text-gray-500 mt-1.5">
-                      {progressPercent >= 100 ? '✅ Meta atingida' : 'Em andamento'}
+                      {progressPercent >= 100 
+                        ? `✅ Meta atingida (${progressPercent.toFixed(1)}%)` 
+                        : progressPercent >= 75
+                        ? `Quase lá (${progressPercent.toFixed(1)}%)`
+                        : `Em andamento (${progressPercent.toFixed(1)}%)`}
                     </p>
                   </div>
 
@@ -2382,17 +3335,18 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                       <p className="text-xs text-gray-500">Sem registro anterior</p>
                     ) : (
                       <div>
-                        <p className={`text-xl font-bold ${variationValor >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                          {variationValor >= 0 ? '▲' : '▼'} {formatCurrency(Math.abs(variationValor))}
+                        <p className={`text-xl font-bold flex items-center gap-1 ${variationValor >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          <span>{variationValor >= 0 ? '▲' : '▼'}</span>
+                          <span>{formatCurrency(Math.abs(variationValor))}</span>
                         </p>
                         {variationPercent !== null && (
                           <p className="text-[10px] text-gray-500 mt-1">
-                            {variationPercent >= 0 ? 'Acima' : 'Abaixo'} {Math.abs(variationPercent).toFixed(1)}%
+                            {variationPercent >= 0 ? '+' : ''}{variationPercent.toFixed(1)}% em relação ao período anterior
                           </p>
                         )}
                         {previousDayRecord && (
                           <p className="text-[10px] text-gray-400 mt-1">
-                            Ontem: {formatCurrency(previousDayRecord.entradas)}
+                            Período anterior: {formatCurrency(previousDayRecord.entradas)}
                           </p>
                         )}
                       </div>
@@ -2421,11 +3375,233 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                 </div>
                 {mostrarEntradas && (
                 <div className="p-4">
+                  {/* RESUMO VISUAL DAS ENTRADAS */}
+                  {!showEntradasResumo && (
+                    <div className="mb-4 flex justify-end">
+                      <button
+                        onClick={() => setShowEntradasResumo(true)}
+                        className="px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-xs font-medium flex items-center gap-1"
+                      >
+                        <BarChart3 className="w-3 h-3" />
+                        Mostrar Resumo
+                      </button>
+                    </div>
+                  )}
+                  {showEntradasResumo && (
+                    <div className="mb-4 p-4 bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-200 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4 text-emerald-600" />
+                          Resumo das Entradas
+                        </h3>
+                        <button
+                          onClick={() => setShowEntradasResumo(false)}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Ocultar
+                        </button>
+                      </div>
+                      
+                      {/* Seletor de Categoria para Entradas */}
+                      <div className="mb-3 p-2 bg-white/60 rounded-lg border border-purple-200">
+                        <CategorySelector
+                          tipo="entrada"
+                          categoriaId={entries.categoria?.categoriaId}
+                          tagIds={entries.categoria?.tagIds}
+                          observacao={entries.categoria?.observacao}
+                          onChange={(categoria) => {
+                            if (categoria) {
+                              updateEntries('categoria', categoria);
+                            } else {
+                              updateEntries('categoria', undefined);
+                            }
+                          }}
+                          compact={true}
+                        />
+                      </div>
+                      
+                      {/* Cards de categorias */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                        <div className="bg-white/80 rounded-lg p-2 border border-gray-200">
+                          <div className="text-[10px] text-gray-500">Físico</div>
+                          <div className="text-sm font-bold text-gray-800">
+                            {formatCurrency(entradasResumo.dinheiro + entradasResumo.fundoCaixa + entradasResumo.cheques)}
+                          </div>
+                        </div>
+                        <div className="bg-white/80 rounded-lg p-2 border border-gray-200">
+                          <div className="text-[10px] text-gray-500">Digital</div>
+                          <div className="text-sm font-bold text-gray-800">
+                            {formatCurrency(entradasResumo.cartao + entradasResumo.cartaoLink + entradasResumo.pixMaquininha + entradasResumo.pixConta + entradasResumo.boletos)}
+                          </div>
+                        </div>
+                        <div className="bg-white/80 rounded-lg p-2 border border-gray-200">
+                          <div className="text-[10px] text-gray-500">Outros</div>
+                          <div className="text-sm font-bold text-gray-800">
+                            {formatCurrency(entradasResumo.outros + entradasResumo.brindes + entradasResumo.crediario + entradasResumo.cartaoPresente + entradasResumo.cashBack + entradasResumo.taxas)}
+                          </div>
+                        </div>
+                        <div className="bg-gradient-to-r from-emerald-500 to-green-500 rounded-lg p-2 text-white">
+                          <div className="text-[10px] opacity-90">Total</div>
+                          <div className="text-sm font-bold">
+                            {formatCurrency(entradasResumo.total)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Detalhamento rápido */}
+                      <div className="text-xs text-gray-600 space-y-1">
+                        <div className="flex justify-between">
+                          <span>Dinheiro:</span>
+                          <span className="font-medium">{formatCurrency(entradasResumo.dinheiro)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Cartão:</span>
+                          <span className="font-medium">{formatCurrency(entradasResumo.cartao + entradasResumo.cartaoLink)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>PIX:</span>
+                          <span className="font-medium">{formatCurrency(entradasResumo.pixMaquininha + entradasResumo.pixConta)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Boletos:</span>
+                          <span className="font-medium">{formatCurrency(entradasResumo.boletos)}</span>
+                        </div>
+                        {entradasResumo.cheques > 0 && (
+                          <div className="flex justify-between">
+                            <span>Cheques:</span>
+                            <span className="font-medium">{formatCurrency(entradasResumo.cheques)}</span>
+                          </div>
+                        )}
+                        {entradasResumo.taxas > 0 && (
+                          <div className="flex justify-between">
+                            <span>Taxas:</span>
+                            <span className="font-medium">{formatCurrency(entradasResumo.taxas)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* BUSCA E FILTROS PARA ENTRADAS */}
+                  <div className="mb-4 flex flex-col sm:flex-row gap-2">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={entradasSearchTerm}
+                        onChange={(e) => setEntradasSearchTerm(e.target.value)}
+                        placeholder="Buscar entradas..."
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      />
+                    </div>
+                    <select
+                      value={entradasFilterCategory}
+                      onChange={(e) => setEntradasFilterCategory(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    >
+                      <option value="all">Todas as categorias</option>
+                      <option value="fisico">Físico</option>
+                      <option value="digital">Digital</option>
+                      <option value="outros">Outros</option>
+                    </select>
+                    <button
+                      onClick={() => {
+                        setEntradasSearchTerm('');
+                        setEntradasFilterCategory('all');
+                      }}
+                      className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+
+                  {/* TEMPLATES DE ENTRADAS */}
+                  {entradasTemplates.length > 0 && (
+                    <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-xs font-semibold text-gray-800 flex items-center gap-2">
+                          <FileText className="w-3 h-3" />
+                          Templates Rápidos
+                        </h4>
+                        <button
+                          onClick={() => setShowEntradasTemplates(!showEntradasTemplates)}
+                          className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          {showEntradasTemplates ? 'Ocultar' : 'Mostrar'}
+                        </button>
+                      </div>
+                      {showEntradasTemplates && (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {entradasTemplates.map((template) => (
+                              <div key={template.id} className="flex items-center gap-1">
+                                <button
+                                  onClick={() => aplicarTemplateEntrada(template)}
+                                  className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 text-xs font-medium text-gray-700 transition-all"
+                                  title={template.descricao}
+                                >
+                                  {template.nome} ({formatCurrency(template.valor)})
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Deseja remover o template "${template.nome}"?`)) {
+                                      setEntradasTemplates(prev => prev.filter(t => t.id !== template.id));
+                                    }
+                                  }}
+                                  className="px-1.5 py-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-xs"
+                                  title="Remover template"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          {entradasTemplates.length === 0 && (
+                            <p className="text-xs text-gray-500 italic">Nenhum template salvo. Use o botão 💾 para salvar templates.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* LISTA DE ENTRADAS FILTRADAS (se houver busca/filtro ativo) */}
+                  {(entradasSearchTerm || entradasFilterCategory !== 'all') && entradasFiltradas.length > 0 && (
+                    <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <h4 className="text-xs font-semibold text-gray-800 mb-2">
+                        Resultados da Busca ({entradasFiltradas.length})
+                      </h4>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {entradasFiltradas.map((item, index) => (
+                          <div key={index} className="flex justify-between items-center p-2 bg-white rounded border border-gray-200 text-xs">
+                            <span className="text-gray-700">{item.descricao}</span>
+                            <span className="font-semibold text-emerald-600">{formatCurrency(item.valor)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-medium text-gray-700">
                         Dinheiro
                       </label>
+                        {entries.dinheiro > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nome = prompt('Nome do template:');
+                              if (nome && nome.trim()) {
+                                salvarTemplateEntrada(nome.trim(), 'dinheiro', entries.dinheiro, `Dinheiro: ${formatCurrency(entries.dinheiro)}`);
+                              }
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                            title="Salvar como template"
+                          >
+                            💾
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={formatInputValue(entries.dinheiro)}
@@ -2462,9 +3638,26 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-medium text-gray-700">
                         Cartão
                       </label>
+                        {entries.cartao > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nome = prompt('Nome do template:');
+                              if (nome && nome.trim()) {
+                                salvarTemplateEntrada(nome.trim(), 'cartao', entries.cartao, `Cartão: ${formatCurrency(entries.cartao)}`);
+                              }
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                            title="Salvar como template"
+                          >
+                            💾
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={formatInputValue(entries.cartao)}
@@ -2595,34 +3788,52 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                             </div>
                           )}
 
-                          {/* Validação dos valores */}
+                          {/* Validação dos valores - MELHORADA */}
                           {Array.isArray(entries.cartaoLinkClientes) && entries.cartaoLinkClientes.length > 0 && (
-                            <div className={`mt-4 p-3 rounded-xl border text-sm ${
+                            <div className={`mt-4 p-3 rounded-xl border-2 transition-all duration-300 ${
                               totalCartaoLinkClientes === entries.cartaoLink
-                                ? 'bg-green-50 border-green-200 text-green-800'
-                                : 'bg-red-50 border-red-200 text-red-800'
+                                ? 'bg-green-50 border-green-300 text-green-800 shadow-sm'
+                                : 'bg-red-50 border-red-300 text-red-800 shadow-md animate-pulse'
                             }`}>
                               <div className="flex items-center gap-2 mb-2">
                                 {totalCartaoLinkClientes === entries.cartaoLink ? (
-                                  <span className="text-green-600">✅</span>
+                                  <>
+                                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                    <span className="font-semibold text-sm">
+                                      ✅ Valores Conferem Perfeitamente
+                                    </span>
+                                  </>
                                 ) : (
-                                  <span className="text-red-600">❌</span>
-                                )}
-                                <span className="font-medium">
-                                  {totalCartaoLinkClientes === entries.cartaoLink
-                                    ? 'Valores Conferem'
-                                    : 'Valores Não Conferem'
-                                  }
+                                  <>
+                                    <AlertCircle className="w-4 h-4 text-red-600" />
+                                    <span className="font-semibold text-sm">
+                                      ❌ Valores Não Conferem
                                 </span>
+                                  </>
+                                )}
                               </div>
                               <div className="text-xs space-y-1">
-                                <div>Total dos Clientes: {formatCurrency(totalCartaoLinkClientes)}</div>
-                                <div className="font-medium">
-                                  Valor Cartão Link: {formatCurrency(entries.cartaoLink)}
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">Total dos Clientes:</span>
+                                  <span className={`font-bold ${totalCartaoLinkClientes === entries.cartaoLink ? 'text-green-700' : 'text-red-700'}`}>
+                                    {formatCurrency(totalCartaoLinkClientes)}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">Valor Cartão Link:</span>
+                                  <span className="font-bold text-gray-800">
+                                    {formatCurrency(entries.cartaoLink)}
+                                  </span>
                                 </div>
                                 {totalCartaoLinkClientes !== entries.cartaoLink && (
-                                  <div className="font-bold mt-1">
+                                  <div className="mt-2 p-2 bg-red-100 rounded border border-red-300">
+                                    <div className="font-bold text-red-800 text-xs flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3" />
                                     Diferença: {formatCurrency(Math.abs(totalCartaoLinkClientes - entries.cartaoLink))}
+                                    </div>
+                                    <div className="text-[10px] text-red-700 mt-1">
+                                      ⚠️ Ajuste os valores para que batam exatamente!
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -2634,10 +3845,27 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700 flex items-center">
                         Boletos
                         <HelpTooltip text="Valor total recebido via boletos bancários. Adicione os clientes abaixo com seus valores e parcelas." />
                       </label>
+                        {entries.boletos > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nome = prompt('Nome do template:');
+                              if (nome && nome.trim()) {
+                                salvarTemplateEntrada(nome.trim(), 'boleto', entries.boletos, `Boletos: ${formatCurrency(entries.boletos)}`);
+                              }
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                            title="Salvar como template"
+                          >
+                            💾
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={formatInputValue(entries.boletos)}
@@ -2754,34 +3982,52 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                             </div>
                           )}
 
-                          {/* Validação dos valores */}
+                          {/* Validação dos valores - MELHORADA */}
                           {Array.isArray(entries.boletosClientes) && entries.boletosClientes.length > 0 && (
-                            <div className={`mt-4 p-3 rounded-xl border text-sm ${
+                            <div className={`mt-4 p-3 rounded-xl border-2 transition-all duration-300 ${
                               totalBoletosClientes === entries.boletos
-                                ? 'bg-green-50 border-green-200 text-green-800'
-                                : 'bg-red-50 border-red-200 text-red-800'
+                                ? 'bg-green-50 border-green-300 text-green-800 shadow-sm'
+                                : 'bg-red-50 border-red-300 text-red-800 shadow-md animate-pulse'
                             }`}>
                               <div className="flex items-center gap-2 mb-2">
                                 {totalBoletosClientes === entries.boletos ? (
-                                  <span className="text-green-600">✅</span>
+                                  <>
+                                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                    <span className="font-semibold text-sm">
+                                      ✅ Valores Conferem Perfeitamente
+                                    </span>
+                                  </>
                                 ) : (
-                                  <span className="text-red-600">❌</span>
-                                )}
-                                <span className="font-medium">
-                                  {totalBoletosClientes === entries.boletos
-                                    ? 'Valores Conferem'
-                                    : 'Valores Não Conferem'
-                                  }
+                                  <>
+                                    <AlertCircle className="w-4 h-4 text-red-600" />
+                                    <span className="font-semibold text-sm">
+                                      ❌ Valores Não Conferem
                                 </span>
+                                  </>
+                                )}
                               </div>
                               <div className="text-xs space-y-1">
-                                <div>Total dos Clientes: {formatCurrency(totalBoletosClientes)}</div>
-                                <div className="font-medium">
-                                  Valor Boletos: {formatCurrency(entries.boletos)}
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">Total dos Clientes:</span>
+                                  <span className={`font-bold ${totalBoletosClientes === entries.boletos ? 'text-green-700' : 'text-red-700'}`}>
+                                    {formatCurrency(totalBoletosClientes)}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">Valor Boletos:</span>
+                                  <span className="font-bold text-gray-800">
+                                    {formatCurrency(entries.boletos)}
+                                  </span>
                                 </div>
                                 {totalBoletosClientes !== entries.boletos && (
-                                  <div className="font-bold mt-1">
+                                  <div className="mt-2 p-2 bg-red-100 rounded border border-red-300">
+                                    <div className="font-bold text-red-800 text-xs flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3" />
                                     Diferença: {formatCurrency(Math.abs(totalBoletosClientes - entries.boletos))}
+                                    </div>
+                                    <div className="text-[10px] text-red-700 mt-1">
+                                      ⚠️ Ajuste os valores para que batam exatamente!
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -2806,10 +4052,27 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700 flex items-center">
                         PIX Conta
                         <HelpTooltip text="Valor total recebido via PIX na conta bancária. Adicione os clientes abaixo para detalhar os valores individuais." />
                       </label>
+                        {entries.pixConta > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nome = prompt('Nome do template:');
+                              if (nome && nome.trim()) {
+                                salvarTemplateEntrada(nome.trim(), 'pix', entries.pixConta, `PIX Conta: ${formatCurrency(entries.pixConta)}`);
+                              }
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                            title="Salvar como template"
+                          >
+                            💾
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={formatInputValue(entries.pixConta)}
@@ -2862,7 +4125,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                                   onChange={(e) => {
                                     const numbers = e.target.value.replace(/\D/g, '');
                                     const cents = numbers === '' ? 0 : parseInt(numbers);
-                                    const reais = cents / 100;
+                                    const reais = preciseCurrency.fromCents(cents); // Usa função precisa
                                     setNovoPixContaClienteValor(reais);
                                   }}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all duration-200 hover:border-purple-300"
@@ -2908,34 +4171,52 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                             </div>
                           )}
 
-                          {/* Validação dos valores */}
+                          {/* Validação dos valores - MELHORADA */}
                           {Array.isArray(entries.pixContaClientes) && entries.pixContaClientes.length > 0 && (
-                            <div className={`p-3 rounded-lg border text-xs ${
-                              totalPixContaClientes === entries.pixConta
-                                ? 'bg-green-50 border-green-200 text-green-800'
-                                : 'bg-red-50 border-red-200 text-red-800'
+                            <div className={`p-3 rounded-lg border-2 transition-all duration-300 ${
+                              preciseCurrency.equals(totalPixContaClientes, entries.pixConta)
+                                ? 'bg-green-50 border-green-300 text-green-800 shadow-sm'
+                                : 'bg-red-50 border-red-300 text-red-800 shadow-md animate-pulse'
                             }`}>
                               <div className="flex items-center gap-2 mb-1">
-                                {totalPixContaClientes === entries.pixConta ? (
-                                  <span className="text-green-600">✅</span>
+                                {preciseCurrency.equals(totalPixContaClientes, entries.pixConta) ? (
+                                  <>
+                                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                    <span className="font-semibold text-sm">
+                                      ✅ Valores Conferem Perfeitamente
+                                    </span>
+                                  </>
                                 ) : (
-                                  <span className="text-red-600">❌</span>
+                                  <>
+                                    <AlertCircle className="w-4 h-4 text-red-600" />
+                                    <span className="font-semibold text-sm">
+                                      ❌ Valores Não Conferem
+                                    </span>
+                                  </>
                                 )}
-                                <span className="font-medium">
-                                  {totalPixContaClientes === entries.pixConta
-                                    ? 'Valores Conferem'
-                                    : 'Valores Não Conferem'
-                                  }
+                              </div>
+                              <div className="text-xs space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">Total dos Clientes:</span>
+                                  <span className={`font-bold ${preciseCurrency.equals(totalPixContaClientes, entries.pixConta) ? 'text-green-700' : 'text-red-700'}`}>
+                                    {formatCurrency(totalPixContaClientes)}
                                 </span>
                               </div>
-                              <div className="text-xs space-y-0.5">
-                                <div>Total dos Clientes: {formatCurrency(totalPixContaClientes)}</div>
-                                <div className="font-medium">
-                                  Valor PIX Conta: {formatCurrency(entries.pixConta)}
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">Valor PIX Conta:</span>
+                                  <span className="font-bold text-gray-800">
+                                    {formatCurrency(entries.pixConta)}
+                                  </span>
                                 </div>
-                                {totalPixContaClientes !== entries.pixConta && (
-                                  <div className="font-bold mt-1">
-                                    Diferença: {formatCurrency(Math.abs(totalPixContaClientes - entries.pixConta))}
+                                {!preciseCurrency.equals(totalPixContaClientes, entries.pixConta) && (
+                                  <div className="mt-2 p-2 bg-red-100 rounded border border-red-300">
+                                    <div className="font-bold text-red-800 text-xs flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3" />
+                                    Diferença: {formatCurrency(Math.abs(preciseCurrency.subtract(totalPixContaClientes, entries.pixConta)))}
+                                    </div>
+                                    <div className="text-[10px] text-red-700 mt-1">
+                                      ⚠️ Ajuste os valores para que batam exatamente!
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -3282,6 +4563,455 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                 )}
               </div>
 
+              {/* NOVOS CAMPOS DE ENTRADA */}
+              <div className="mt-6 border-t border-gray-200 pt-6">
+                <div className="bg-gradient-to-r from-slate-500 via-gray-500 to-slate-600 text-white p-4 rounded-t-xl mb-4">
+                  <h2 className="text-xl font-bold flex items-center gap-3">
+                    <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                      <span className="text-lg">📋</span>
+                    </div>
+                    Outras Entradas
+                    <span className="ml-auto text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded cursor-pointer" onClick={() => setMostrarOutrasEntradas(v=>!v)}>
+                      {mostrarOutrasEntradas ? '▼' : '▶'}
+                    </span>
+                  </h2>
+                </div>
+                
+                {mostrarOutrasEntradas && (
+                <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200/50 p-4 space-y-6">
+                  {/* Campo Outros - Múltiplos Lançamentos */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                      Outros
+                      <HelpTooltip text="Adicione múltiplos lançamentos de outros valores. Cada lançamento terá uma descrição e um valor." />
+                    </label>
+                    <div className="text-xs text-gray-600 mb-2 flex items-center justify-between">
+                      <span className="font-medium">Total: {formatCurrency(totalOutrosLancamentos || entries.outros || 0)}</span>
+                      {((entries.outrosLancamentos && entries.outrosLancamentos.length > 0) || (entries.outros || 0) > 0) && (
+                        <button 
+                          type="button" 
+                          onClick={() => setShowOutrosDetails(!showOutrosDetails)} 
+                          className="px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 text-xs"
+                        >
+                          {showOutrosDetails ? 'Recolher' : 'Expandir'}
+                        </button>
+                      )}
+                    </div>
+                    
+                    {showOutrosDetails && (
+                      <div className="mt-4 p-4 bg-gradient-to-br from-gray-50 to-slate-50 rounded-xl border border-gray-200">
+                        <h3 className="text-sm font-semibold text-gray-800 mb-3">Adicionar Lançamento</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Descrição
+                            </label>
+                            <input
+                              type="text"
+                              value={novoOutroDescricao}
+                              onChange={(e) => setNovoOutroDescricao(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                              placeholder="Ex: Venda de equipamento, Recebimento extra..."
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Valor
+                            </label>
+                            <input
+                              type="text"
+                              value={formatInputValue(novoOutroValor)}
+                              onChange={(e) => {
+                                const numbers = e.target.value.replace(/\D/g, '');
+                                const cents = numbers === '' ? 0 : parseInt(numbers);
+                                const reais = cents / 100;
+                                setNovoOutroValor(reais);
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                              placeholder="R$ 0,00"
+                            />
+                          </div>
+                        </div>
+                        {novoOutroDescricao.trim() && novoOutroValor > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              adicionarOutroLancamento(novoOutroDescricao, novoOutroValor);
+                              setNovoOutroDescricao('');
+                              setNovoOutroValor(0);
+                            }}
+                            className="w-full px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm font-medium"
+                          >
+                            ➕ Adicionar Lançamento
+                          </button>
+                        )}
+                        
+                        {/* Lista de lançamentos */}
+                        {Array.isArray(entries.outrosLancamentos) && entries.outrosLancamentos.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <h4 className="text-sm font-medium text-gray-700">Lançamentos Registrados:</h4>
+                            {entries.outrosLancamentos.map((lancamento, index) => (
+                              <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+                                <div className="flex-1">
+                                  <div className="text-sm font-medium text-gray-800">{lancamento.descricao}</div>
+                                  <div className="text-xs text-gray-600">
+                                    Valor: {formatCurrency(lancamento.valor)}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => removerOutroLancamento(index)}
+                                  className="px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                            <div className="mt-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                              <div className="text-sm font-medium text-gray-800">
+                                Total: {formatCurrency(totalOutrosLancamentos)}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Campo Brindes - Múltiplos Lançamentos */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                      Brindes
+                      <HelpTooltip text="Adicione múltiplos lançamentos de brindes. Cada lançamento terá uma descrição e um valor." />
+                    </label>
+                    <div className="text-xs text-gray-600 mb-2 flex items-center justify-between">
+                      <span className="font-medium">Total: {formatCurrency(totalBrindesLancamentos || 0)}</span>
+                      {entries.brindesLancamentos && entries.brindesLancamentos.length > 0 && (
+                        <button 
+                          type="button" 
+                          onClick={() => setShowBrindesDetails(!showBrindesDetails)} 
+                          className="px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 text-xs"
+                        >
+                          {showBrindesDetails ? 'Recolher' : 'Expandir'}
+                        </button>
+                      )}
+                    </div>
+                    
+                    {showBrindesDetails && (
+                      <div className="mt-4 p-4 bg-gradient-to-br from-yellow-50 to-amber-50 rounded-xl border border-yellow-200">
+                        <h3 className="text-sm font-semibold text-gray-800 mb-3">Adicionar Lançamento</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Descrição
+                            </label>
+                            <input
+                              type="text"
+                              value={novoBrindeDescricao}
+                              onChange={(e) => setNovoBrindeDescricao(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                              placeholder="Ex: Brinde promocional, Presente cliente..."
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Valor
+                            </label>
+                            <input
+                              type="text"
+                              value={formatInputValue(novoBrindeValor)}
+                              onChange={(e) => {
+                                const numbers = e.target.value.replace(/\D/g, '');
+                                const cents = numbers === '' ? 0 : parseInt(numbers);
+                                const reais = cents / 100;
+                                setNovoBrindeValor(reais);
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                              placeholder="R$ 0,00"
+                            />
+                          </div>
+                        </div>
+                        {novoBrindeDescricao.trim() && novoBrindeValor > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              adicionarBrindeLancamento(novoBrindeDescricao, novoBrindeValor);
+                              setNovoBrindeDescricao('');
+                              setNovoBrindeValor(0);
+                            }}
+                            className="w-full px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm font-medium"
+                          >
+                            ➕ Adicionar Lançamento
+                          </button>
+                        )}
+                        
+                        {/* Lista de lançamentos */}
+                        {Array.isArray(entries.brindesLancamentos) && entries.brindesLancamentos.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <h4 className="text-sm font-medium text-gray-700">Lançamentos Registrados:</h4>
+                            {entries.brindesLancamentos.map((lancamento, index) => (
+                              <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-yellow-200">
+                                <div className="flex-1">
+                                  <div className="text-sm font-medium text-gray-800">{lancamento.descricao}</div>
+                                  <div className="text-xs text-gray-600">
+                                    Valor: {formatCurrency(lancamento.valor)}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => removerBrindeLancamento(index)}
+                                  className="px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                            <div className="mt-2 p-2 bg-yellow-50 rounded-lg border border-yellow-200">
+                              <div className="text-sm font-medium text-gray-800">
+                                Total: {formatCurrency(totalBrindesLancamentos)}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Campo Crediário */}
+                  <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                    Crediário
+                    <HelpTooltip text="Valor total recebido via crediário. Adicione os clientes abaixo com seus valores e parcelas." />
+                  </label>
+                  <input
+                    type="text"
+                    value={formatInputValue(entries.crediario || 0)}
+                    onChange={(e) => handleCurrencyInput('crediario', e.target.value, true)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all duration-200 hover:border-teal-300 focus:shadow-lg"
+                    placeholder="R$ 0,00"
+                  />
+                  {(entries.crediario || 0) > 0 && showCrediarioDetails && (
+                    <div className="mt-4 p-4 bg-gradient-to-br from-teal-50 to-cyan-50 rounded-xl border border-teal-200">
+                      <h3 className="text-sm font-semibold text-gray-800 mb-3">Clientes Crediário</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                        <input
+                          type="text"
+                          value={novoCrediarioClienteNome}
+                          onChange={(e) => setNovoCrediarioClienteNome(e.target.value)}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="Nome do cliente"
+                        />
+                        <input
+                          type="text"
+                          value={formatInputValue(novoCrediarioClienteValor)}
+                          onChange={(e) => {
+                            const numbers = e.target.value.replace(/\D/g, '');
+                            const cents = numbers === '' ? 0 : parseInt(numbers);
+                            const reais = cents / 100;
+                            setNovoCrediarioClienteValor(reais);
+                          }}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="Valor"
+                        />
+                        <select
+                          value={novoCrediarioClienteParcelas}
+                          onChange={(e) => setNovoCrediarioClienteParcelas(parseInt(e.target.value) || 1)}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        >
+                          {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                        </select>
+                      </div>
+                      {novoCrediarioClienteNome && novoCrediarioClienteValor > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleAdicionarCrediarioCliente}
+                          className="w-full px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 text-sm font-medium"
+                        >
+                          ➕ Adicionar Cliente
+                        </button>
+                      )}
+                      {Array.isArray(entries.crediarioClientes) && entries.crediarioClientes.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {entries.crediarioClientes.map((cliente, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-white rounded-lg">
+                              <div>
+                                <div className="text-sm font-medium">{cliente.nome}</div>
+                                <div className="text-xs text-gray-600">
+                                  {formatCurrency(cliente.valor)} | {cliente.parcelas}x
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removerCrediarioCliente(index)}
+                                className="px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                  {/* Campo Cartão Presente */}
+                  <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                    Cartão Presente
+                    <HelpTooltip text="Valor total recebido via cartão presente. Adicione os clientes abaixo com seus valores e parcelas." />
+                  </label>
+                  <input
+                    type="text"
+                    value={formatInputValue(entries.cartaoPresente || 0)}
+                    onChange={(e) => handleCurrencyInput('cartaoPresente', e.target.value, true)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-200 hover:border-pink-300 focus:shadow-lg"
+                    placeholder="R$ 0,00"
+                  />
+                  {(entries.cartaoPresente || 0) > 0 && showCartaoPresenteDetails && (
+                    <div className="mt-4 p-4 bg-gradient-to-br from-pink-50 to-rose-50 rounded-xl border border-pink-200">
+                      <h3 className="text-sm font-semibold text-gray-800 mb-3">Clientes Cartão Presente</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                        <input
+                          type="text"
+                          value={novoCartaoPresenteClienteNome}
+                          onChange={(e) => setNovoCartaoPresenteClienteNome(e.target.value)}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="Nome do cliente"
+                        />
+                        <input
+                          type="text"
+                          value={formatInputValue(novoCartaoPresenteClienteValor)}
+                          onChange={(e) => {
+                            const numbers = e.target.value.replace(/\D/g, '');
+                            const cents = numbers === '' ? 0 : parseInt(numbers);
+                            const reais = cents / 100;
+                            setNovoCartaoPresenteClienteValor(reais);
+                          }}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="Valor"
+                        />
+                        <select
+                          value={novoCartaoPresenteClienteParcelas}
+                          onChange={(e) => setNovoCartaoPresenteClienteParcelas(parseInt(e.target.value) || 1)}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        >
+                          {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                        </select>
+                      </div>
+                      {novoCartaoPresenteClienteNome && novoCartaoPresenteClienteValor > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleAdicionarCartaoPresenteCliente}
+                          className="w-full px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 text-sm font-medium"
+                        >
+                          ➕ Adicionar Cliente
+                        </button>
+                      )}
+                      {Array.isArray(entries.cartaoPresenteClientes) && entries.cartaoPresenteClientes.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {entries.cartaoPresenteClientes.map((cliente, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-white rounded-lg">
+                              <div>
+                                <div className="text-sm font-medium">{cliente.nome}</div>
+                                <div className="text-xs text-gray-600">
+                                  {formatCurrency(cliente.valor)} | {cliente.parcelas}x
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removerCartaoPresenteCliente(index)}
+                                className="px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                  {/* Campo Cash Back */}
+                  <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                    Cash Back
+                    <HelpTooltip text="Valor total de Cash Back. Adicione clientes com CPF e nome. O valor será armazenado automaticamente para uso como desconto na próxima compra." />
+                  </label>
+                  <input
+                    type="text"
+                    value={formatInputValue(entries.cashBack || 0)}
+                    onChange={(e) => handleCurrencyInput('cashBack', e.target.value, true)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200 hover:border-indigo-300 focus:shadow-lg"
+                    placeholder="R$ 0,00"
+                  />
+                  {(entries.cashBack || 0) > 0 && showCashBackDetails && (
+                    <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl border border-indigo-200">
+                      <h3 className="text-sm font-semibold text-gray-800 mb-3">Clientes Cash Back</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                        <input
+                          type="text"
+                          value={novoCashBackClienteNome}
+                          onChange={(e) => setNovoCashBackClienteNome(e.target.value)}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="Nome do cliente"
+                        />
+                        <input
+                          type="text"
+                          value={novoCashBackClienteCPF}
+                          onChange={(e) => setNovoCashBackClienteCPF(formatCPF(e.target.value))}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="CPF (000.000.000-00)"
+                          maxLength={14}
+                        />
+                        <input
+                          type="text"
+                          value={formatInputValue(novoCashBackClienteValor)}
+                          onChange={(e) => {
+                            const numbers = e.target.value.replace(/\D/g, '');
+                            const cents = numbers === '' ? 0 : parseInt(numbers);
+                            const reais = cents / 100;
+                            setNovoCashBackClienteValor(reais);
+                          }}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="Valor Cash Back"
+                        />
+                      </div>
+                      {novoCashBackClienteNome && novoCashBackClienteCPF && novoCashBackClienteValor > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleAdicionarCashBackCliente}
+                          className="w-full px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium"
+                        >
+                          ➕ Adicionar Cliente Cash Back
+                        </button>
+                      )}
+                      {Array.isArray(entries.cashBackClientes) && entries.cashBackClientes.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {entries.cashBackClientes.map((cliente, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-white rounded-lg">
+                              <div>
+                                <div className="text-sm font-medium">{cliente.nome}</div>
+                                <div className="text-xs text-gray-600">
+                                  CPF: {cliente.cpf} | {formatCurrency(cliente.valor)}
+                                </div>
+                                <div className="text-xs text-green-600 font-medium">
+                                  💰 Disponível para desconto
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removerCashBackCliente(index)}
+                                className="px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                </div>
+              )}
+              </div>
 
               {/* SAÍDAS */}
               <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200/50">
@@ -3298,6 +5028,213 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                 </div>
                 {mostrarSaidas && (
                 <div className="p-4">
+                  {/* RESUMO VISUAL DAS SAÍDAS */}
+                  {!showSaidasResumo && (
+                    <div className="mb-4 flex justify-end">
+                      <button
+                        onClick={() => setShowSaidasResumo(true)}
+                        className="px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-xs font-medium flex items-center gap-1"
+                      >
+                        <BarChart3 className="w-3 h-3" />
+                        Mostrar Resumo
+                      </button>
+                    </div>
+                  )}
+                  {showSaidasResumo && (
+                    <div className="mb-4 p-4 bg-gradient-to-br from-red-50 to-rose-50 rounded-xl border border-red-200 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4 text-red-600" />
+                          Resumo das Saídas
+                        </h3>
+                        <button
+                          onClick={() => setShowSaidasResumo(false)}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Ocultar
+                        </button>
+                      </div>
+                      
+                      {/* Seletor de Categoria para Saídas */}
+                      <div className="mb-3 p-2 bg-white/60 rounded-lg border border-purple-200">
+                        <CategorySelector
+                          tipo="saida"
+                          categoriaId={exits.categoria?.categoriaId}
+                          tagIds={exits.categoria?.tagIds}
+                          observacao={exits.categoria?.observacao}
+                          onChange={(categoria) => {
+                            if (categoria) {
+                              handleExitChange('categoria', categoria);
+                            } else {
+                              handleExitChange('categoria', undefined);
+                            }
+                          }}
+                          compact={true}
+                        />
+                      </div>
+                      
+                      {/* Cards de categorias */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                        <div className="bg-white/80 rounded-lg p-2 border border-gray-200">
+                          <div className="text-[10px] text-gray-500">Operacionais</div>
+                          <div className="text-sm font-bold text-gray-800">
+                            {formatCurrency(saidasResumo.descontos + saidasResumo.retiradas + saidasResumo.devolucoes)}
+                          </div>
+                        </div>
+                        <div className="bg-white/80 rounded-lg p-2 border border-gray-200">
+                          <div className="text-[10px] text-gray-500">Funcionários</div>
+                          <div className="text-sm font-bold text-gray-800">
+                            {formatCurrency(saidasResumo.vales + saidasResumo.puxador)}
+                          </div>
+                        </div>
+                        <div className="bg-white/80 rounded-lg p-2 border border-gray-200">
+                          <div className="text-[10px] text-gray-500">Logística</div>
+                          <div className="text-sm font-bold text-gray-800">
+                            {formatCurrency(saidasResumo.correios + saidasResumo.transportadora)}
+                          </div>
+                        </div>
+                        <div className="bg-gradient-to-r from-red-500 to-rose-500 rounded-lg p-2 text-white">
+                          <div className="text-[10px] opacity-90">Total</div>
+                          <div className="text-sm font-bold">
+                            {formatCurrency(saidasResumo.total)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Detalhamento rápido */}
+                      <div className="text-xs text-gray-600 space-y-1">
+                        <div className="flex justify-between">
+                          <span>Descontos:</span>
+                          <span className="font-medium">{formatCurrency(saidasResumo.descontos)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Retiradas:</span>
+                          <span className="font-medium">{formatCurrency(saidasResumo.retiradas)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Devoluções:</span>
+                          <span className="font-medium">{formatCurrency(saidasResumo.devolucoes)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Vales:</span>
+                          <span className="font-medium">{formatCurrency(saidasResumo.vales)}</span>
+                        </div>
+                        {saidasResumo.puxador > 0 && (
+                          <div className="flex justify-between">
+                            <span>Puxador:</span>
+                            <span className="font-medium">{formatCurrency(saidasResumo.puxador)}</span>
+                          </div>
+                        )}
+                        {(saidasResumo.correios > 0 || saidasResumo.transportadora > 0) && (
+                          <div className="flex justify-between">
+                            <span>Envios:</span>
+                            <span className="font-medium">
+                              {formatCurrency(saidasResumo.correios + saidasResumo.transportadora)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* BUSCA E FILTROS */}
+                  <div className="mb-4 flex flex-col sm:flex-row gap-2">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={saidasSearchTerm}
+                        onChange={(e) => setSaidasSearchTerm(e.target.value)}
+                        placeholder="Buscar saídas..."
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                    </div>
+                    <select
+                      value={saidasFilterCategory}
+                      onChange={(e) => setSaidasFilterCategory(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    >
+                      <option value="all">Todas as categorias</option>
+                      <option value="operacional">Operacionais</option>
+                      <option value="funcionarios">Funcionários</option>
+                      <option value="logistica">Logística</option>
+                    </select>
+                    <button
+                      onClick={() => {
+                        setSaidasSearchTerm('');
+                        setSaidasFilterCategory('all');
+                      }}
+                      className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+
+                  {/* TEMPLATES DE SAÍDAS */}
+                  {saidasTemplates.length > 0 && (
+                    <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-xs font-semibold text-gray-800 flex items-center gap-2">
+                          <FileText className="w-3 h-3" />
+                          Templates Rápidos
+                        </h4>
+                        <button
+                          onClick={() => setShowSaidasTemplates(!showSaidasTemplates)}
+                          className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          {showSaidasTemplates ? 'Ocultar' : 'Mostrar'}
+                        </button>
+                      </div>
+                      {showSaidasTemplates && (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {saidasTemplates.map((template) => (
+                              <div key={template.id} className="flex items-center gap-1">
+                                <button
+                                  onClick={() => aplicarTemplateSaida(template)}
+                                  className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 text-xs font-medium text-gray-700 transition-all"
+                                  title={template.descricao}
+                                >
+                                  {template.nome} ({formatCurrency(template.valor)})
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Deseja remover o template "${template.nome}"?`)) {
+                                      setSaidasTemplates(prev => prev.filter(t => t.id !== template.id));
+                                    }
+                                  }}
+                                  className="px-1.5 py-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-xs"
+                                  title="Remover template"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          {saidasTemplates.length === 0 && (
+                            <p className="text-xs text-gray-500 italic">Nenhum template salvo. Use o botão 💾 para salvar templates.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* LISTA DE SAÍDAS FILTRADAS (se houver busca/filtro ativo) */}
+                  {(saidasSearchTerm || saidasFilterCategory !== 'all') && saidasFiltradas.length > 0 && (
+                    <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <h4 className="text-xs font-semibold text-gray-800 mb-2">
+                        Resultados da Busca ({saidasFiltradas.length})
+                      </h4>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {saidasFiltradas.map((item, index) => (
+                          <div key={index} className="flex justify-between items-center p-2 bg-white rounded border border-gray-200 text-xs">
+                            <span className="text-gray-700">{item.descricao}</span>
+                            <span className="font-semibold text-red-600">{formatCurrency(item.valor)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1.5">
@@ -3325,9 +5262,9 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                         placeholder="R$ 0,00"
                       />
                       
-                      {/* Botão para adicionar nova saída */}
+                      {/* Botão para adicionar nova saída e criar template */}
                       {exits.saida > 0 && (
-                            <div className="mt-2">
+                            <div className="mt-2 flex gap-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -3336,10 +5273,23 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                               setNovaSaidaJustificativa('');
                               setNovaSaidaValor(0);
                             }}
-                            className="w-full px-3 py-2 bg-gradient-to-r from-red-500 to-rose-500 text-white rounded-lg hover:from-red-600 hover:to-rose-600 transition-all duration-200 text-xs font-medium flex items-center justify-center gap-2"
+                            className="flex-1 px-3 py-2 bg-gradient-to-r from-red-500 to-rose-500 text-white rounded-lg hover:from-red-600 hover:to-rose-600 transition-all duration-200 text-xs font-medium flex items-center justify-center gap-2"
                           >
                             <span>➕</span>
                             <span>Adicionar Saída</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nome = prompt('Nome do template:');
+                              if (nome && nome.trim()) {
+                                salvarTemplateSaida(nome.trim(), 'saida', exits.saida, `Saída: ${exits.saida > 0 ? formatCurrency(exits.saida) : 'R$ 0,00'}`);
+                              }
+                            }}
+                            className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all duration-200 text-xs font-medium"
+                            title="Salvar como template"
+                          >
+                            💾
                           </button>
                             </div>
                       )}
@@ -3395,34 +5345,52 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                         </div>
                       )}
 
-                      {/* Validação dos valores */}
+                      {/* Validação dos valores - MELHORADA */}
                       {exits.saida > 0 && (
-                        <div className={`mt-3 p-2.5 rounded-lg border text-xs ${
+                        <div className={`mt-3 p-3 rounded-lg border-2 transition-all duration-300 ${
                               totalJustificativasSaida === exits.saida
-                                ? 'bg-green-50 border-green-200 text-green-800'
-                                : 'bg-red-50 border-red-200 text-red-800'
+                                ? 'bg-green-50 border-green-300 text-green-800 shadow-sm'
+                                : 'bg-red-50 border-red-300 text-red-800 shadow-md animate-pulse'
                             }`}>
-                          <div className="flex items-center gap-1.5 mb-1.5">
+                          <div className="flex items-center gap-2 mb-2">
                                 {totalJustificativasSaida === exits.saida ? (
-                                  <span className="text-green-600">✅</span>
+                                  <>
+                                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                    <span className="font-semibold text-sm">
+                                      ✅ Valores Conferem Perfeitamente
+                                    </span>
+                                  </>
                                 ) : (
-                                  <span className="text-red-600">❌</span>
+                                  <>
+                                    <AlertCircle className="w-4 h-4 text-red-600" />
+                                    <span className="font-semibold text-sm">
+                                      ❌ Valores Não Conferem
+                                    </span>
+                                  </>
                                 )}
-                                <span className="font-medium">
-                                  {totalJustificativasSaida === exits.saida
-                                    ? 'Valores Conferem'
-                                    : 'Valores Não Conferem'
-                                  }
+                              </div>
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Total das Justificativas:</span>
+                              <span className={`font-bold ${totalJustificativasSaida === exits.saida ? 'text-green-700' : 'text-red-700'}`}>
+                                {formatCurrency(totalJustificativasSaida)}
                                 </span>
                               </div>
-                          <div className="space-y-0.5 text-[10px]">
-                            <div>Total das Justificativas: {formatCurrency(totalJustificativasSaida)}</div>
-                                <div className="font-medium">
-                                  Valor Total (Saída Retirada): {formatCurrency(exits.saida)}
+                                <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Valor Total (Saída Retirada):</span>
+                              <span className="font-bold text-gray-800">
+                                    {formatCurrency(exits.saida)}
+                                  </span>
                                 </div>
                                 {totalJustificativasSaida !== exits.saida && (
-                              <div className="font-bold text-red-700 mt-1">
+                              <div className="mt-2 p-2 bg-red-100 rounded border border-red-300">
+                                    <div className="font-bold text-red-800 text-xs flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3" />
+                                      Diferença: {formatCurrency(Math.abs(totalJustificativasSaida - exits.saida))}
+                                    </div>
+                                    <div className="text-[10px] text-red-700 mt-1">
                                     ⚠️ Os valores devem bater exatamente! Ajuste os valores para continuar.
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -3482,7 +5450,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                           </div>
                         </div>
                         {novaDevolucaoCpf && novaDevolucaoValor > 0 && (
-                          <div className="flex justify-center">
+                          <div className="flex gap-2 justify-center">
                             <button
                               type="button"
                               onClick={adicionarDevolucao}
@@ -3490,6 +5458,19 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                               title="Adicionar devolução"
                             >
                               💰 Adicionar Devolução
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nome = prompt('Nome do template:');
+                                if (nome && nome.trim()) {
+                                  salvarTemplateSaida(nome.trim(), 'devolucao', novaDevolucaoValor, `Devolução: ${novaDevolucaoNome || 'Cliente'}`);
+                                }
+                              }}
+                              className="px-4 py-3 bg-gray-500 text-white rounded-xl hover:bg-gray-600 transition-all duration-300 text-sm font-medium"
+                              title="Salvar como template"
+                            >
+                              💾
                             </button>
                           </div>
                         )}
@@ -3953,7 +5934,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                                 {formatCurrency(exits.valesFuncionarios.reduce((s, v) => s + (Number(v.valor) || 0), 0))}
                               </span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <button
                                 onClick={() => handleExitChange('valesIncluidosNoMovimento', !exits.valesIncluidosNoMovimento)}
                                 className={`flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-medium transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 ${
@@ -3969,118 +5950,117 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                                   Valor somado ao caixa: {formatCurrency(exits.valesFuncionarios.reduce((s, v) => s + (Number(v.valor) || 0), 0))}
                                 </span>
                               )}
+                              {exits.valesFuncionarios.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const totalVales = exits.valesFuncionarios.reduce((s, v) => s + (Number(v.valor) || 0), 0);
+                                    const nome = prompt('Nome do template:');
+                                    if (nome && nome.trim()) {
+                                      salvarTemplateSaida(nome.trim(), 'vale', totalVales, `Vale: ${exits.valesFuncionarios.map(v => v.nome).join(', ')}`);
+                                    }
+                                  }}
+                                  className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-all text-xs font-medium"
+                                  title="Salvar como template"
+                                >
+                                  💾 Template
+                                </button>
+                              )}
                             </div>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* COMISSÃO PUXADOR (APENAS REGISTRO) */}
+                    {/* COMISSÃO PUXADOR */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Comissão Puxador <span className="text-xs text-gray-500">(apenas registro)</span>
+                        Comissão Puxador <span className="text-xs text-gray-500">(4% padrão, alteração somente com PIM)</span>
                       </label>
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-12 gap-2 items-center">
+                      <div className="space-y-6">
+                        {/* Linha de entrada (puxador) organizada em flex com espaçamento amplo */}
+                        <div className="flex flex-col md:flex-row md:flex-wrap gap-4 md:gap-6">
                           <input
                             type="text"
                             value={exits.puxadorNome}
                             onChange={(e) => handleExitChange('puxadorNome', e.target.value)}
-                            className="col-span-5 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all duration-200 hover:border-red-300 focus:shadow-lg"
+                            className="flex-1 md:max-w-[320px] px-5 py-3.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all duration-200 hover:border-red-300 focus:shadow-lg min-w-[220px]"
                             placeholder="Nome do puxador"
                           />
-                          <div className="col-span-3 px-4 py-3 bg-gray-100 border border-gray-300 rounded-xl text-sm text-gray-600 flex items-center justify-center">
-                            4% (Fixo)
-                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="relative w-[140px]">
                           <input
-                            type="text"
-                            value={formatInputValue(exits.puxadorValor)}
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={0.1}
+                                value={typeof exits.puxadorPorcentagem === 'number' ? exits.puxadorPorcentagem : 4}
+                                readOnly={!canEditPuxadorPercent}
                             onChange={(e) => {
-                              const numbers = e.target.value.replace(/\D/g, '');
-                              const cents = numbers === '' ? 0 : parseInt(numbers);
-                              const reais = cents / 100;
-                              handleExitChange('puxadorValor', reais);
-                              // Definir porcentagem fixa de 4%
-                              if (reais > 0) {
-                                handleExitChange('puxadorPorcentagem', 4);
-                              }
+                                  if (!canEditPuxadorPercent) return;
+                                  const pct = Number(e.target.value) || 0;
+                                  handleExitChange('puxadorPorcentagem', pct);
                             }}
-                            className="col-span-4 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all duration-200 hover:border-red-300 focus:shadow-lg"
-                            placeholder="Valor da comissão"
-                          />
+                                className={`w-full pl-3 pr-10 py-3.5 border rounded-xl text-sm font-semibold text-gray-900 ${canEditPuxadorPercent ? 'bg-white focus:ring-2 focus:ring-red-500 focus:border-transparent' : 'bg-gray-100 border-gray-300 cursor-not-allowed'} `}
+                                placeholder="4,0"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-600 font-semibold">%</span>
                         </div>
-                        
-                        {/* Botão para adicionar mais clientes do puxador */}
-                        {exits.puxadorNome && exits.puxadorValor > 0 && (
-                          <div className="flex justify-center">
                             <button
                               type="button"
-                              onClick={() => {
-                                // Adicionar novo campo para cliente do puxador
-                                const novoCliente = {
-                                  nome: `Cliente ${exits.puxadorClientes ? exits.puxadorClientes.length + 1 : 1}`,
-                                  valor: 0
-                                };
-                                const novosClientes = [...(exits.puxadorClientes || []), novoCliente];
-                                handleExitChange('puxadorClientes', novosClientes);
-                              }}
-                              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-300 text-sm font-medium shadow-md hover:shadow-lg transform hover:scale-105"
-                              title="Adicionar cliente do puxador"
+                              onClick={handleTogglePuxadorLock}
+                              className={`w-[120px] px-3 py-3 text-xs rounded-xl transition-all shadow-sm flex items-center justify-center gap-1 ${
+                                canEditPuxadorPercent
+                                  ? 'bg-green-50 border border-green-300 text-green-700 hover:bg-green-100'
+                                  : 'bg-white border border-blue-200 text-blue-700 hover:bg-blue-50'
+                              }`}
+                              title={canEditPuxadorPercent ? 'Bloquear porcentagem' : 'Alterar % (requer PIM)'}
                             >
-                              ➕ Adicionar Cliente
+                              {canEditPuxadorPercent ? (
+                                <>
+                                  <Unlock className="w-3.5 h-3.5" />
+                                  <span className="font-semibold">Desbloqueado</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Lock className="w-3.5 h-3.5" />
+                                  <span className="font-semibold">% (PIM)</span>
+                                </>
+                              )}
                             </button>
                           </div>
-                        )}
-
-                        {/* Lista de clientes do puxador */}
-                        {Array.isArray(exits.puxadorClientes) && exits.puxadorClientes.length > 0 && (
-                          <div className="space-y-2">
-                            <h4 className="text-sm font-medium text-gray-700">Clientes do Puxador:</h4>
-                            {exits.puxadorClientes.map((cliente, index) => (
-                              <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
                                 <input
                                   type="text"
-                                  value={cliente.nome}
-                                  onChange={(e) => {
-                                    const novosClientes = [...exits.puxadorClientes];
-                                    novosClientes[index].nome = e.target.value;
-                                    handleExitChange('puxadorClientes', novosClientes);
-                                  }}
-                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
-                                  placeholder="Nome do cliente"
-                                />
-                                <input
-                                  type="text"
-                                  value={formatInputValue(cliente.valor)}
+                            value={formatInputValue(exits.puxadorTotalVendas || 0)}
                                   onChange={(e) => {
                                     const numbers = e.target.value.replace(/\D/g, '');
                                     const cents = numbers === '' ? 0 : parseInt(numbers);
-                                    const reais = cents / 100;
-                                    const novosClientes = [...exits.puxadorClientes];
-                                    novosClientes[index].valor = reais;
-                                    handleExitChange('puxadorClientes', novosClientes);
+                              const reais = preciseCurrency.fromCents(cents);
+                              handleExitChange('puxadorTotalVendas', reais);
+                              if (!exits.puxadorPorcentagem) {
+                                handleExitChange('puxadorPorcentagem', 4);
+                              }
                                   }}
-                                  className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
-                                  placeholder="R$ 0,00"
-                                />
-                                <button
-                                  onClick={() => {
-                                    const novosClientes = exits.puxadorClientes.filter((_, i) => i !== index);
-                                    handleExitChange('puxadorClientes', novosClientes);
-                                  }}
-                                  className="px-2 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all duration-200 text-sm"
-                                  title="Remover cliente"
-                                >
-                                  ×
-                                </button>
+                            className="flex-1 md:max-w-[360px] px-5 py-3.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all duration-200 hover:border-red-300 focus:shadow-lg min-w-[260px]"
+                            placeholder="Total de vendas do puxador"
+                          />
                               </div>
-                            ))}
+                        
+                        {/* Linha de resumo */}
+                        <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+                          <div className="flex-1 min-w-[280px] px-5 py-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 flex justify-between">
+                            <span>Total de Vendas</span>
+                            <span className="font-semibold text-right whitespace-nowrap">{formatCurrency(exits.puxadorTotalVendas || 0)}</span>
                           </div>
-                        )}
+                          <div className="flex-1 min-w-[260px] px-5 py-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 flex items-center justify-between gap-4">
+                            <span>Comissão</span>
+                            <span className="font-bold flex items-center gap-2 whitespace-nowrap">{formatCurrency(exits.puxadorValor || 0)}</span>
+                          </div>
+                        </div>
 
                         {exits.puxadorNome && exits.puxadorValor > 0 && (
                           <div className="text-xs text-gray-600 p-3 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl border border-gray-200">
-                            <span className="font-medium">Registro:</span> {exits.puxadorNome} | 4% | Valor da Comissão: {formatCurrency(exits.puxadorValor)}
+                            <span className="font-medium">Registro:</span> {exits.puxadorNome} | {exits.puxadorPorcentagem || 4}% | Comissão: {formatCurrency(exits.puxadorValor)}
                           </div>
                         )}
                         
@@ -4162,7 +6142,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
             {/* RESUMO E AÇÕES */}
             <div className="xl:col-span-1">
               <div className="space-y-4">
-                {/* Total em Caixa */}
+                {/* Total em Caixa - MELHORADO */}
                 <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200/50">
                   <div className="bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white p-4 rounded-t-xl">
                     <h2 className="text-lg font-bold flex items-center gap-2">
@@ -4171,17 +6151,85 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     </h2>
                   </div>
                   <div className="p-4">
-                    <div className="text-center">
-                      <span className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 bg-clip-text text-transparent">{formatCurrency(total)}</span>
+                    <div className="text-center mb-3">
+                      <span className={`text-3xl sm:text-4xl font-bold ${
+                        total < 0 
+                          ? 'text-red-600' 
+                          : total >= dailyGoal 
+                          ? 'text-emerald-600'
+                          : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 bg-clip-text text-transparent'
+                      }`}>
+                        {formatCurrency(total)}
+                      </span>
                     </div>
+                    
+                    {/* Indicadores visuais */}
+                    <div className="space-y-2">
                     {total < 0 && (
-                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <div className="p-3 bg-red-50 border-2 border-red-300 rounded-lg animate-pulse">
                         <p className="text-red-600 text-xs text-center font-semibold flex items-center justify-center gap-2">
-                          <span>⚠️</span>
+                            <AlertCircle className="w-4 h-4" />
                           Valor negativo detectado!
                         </p>
                       </div>
                     )}
+                      
+                      {total >= dailyGoal && total >= 0 && (
+                        <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                          <p className="text-emerald-700 text-xs text-center font-medium flex items-center justify-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Meta atingida!
+                          </p>
+                  </div>
+                      )}
+                      
+                      {total >= 0 && total < dailyGoal && (
+                        <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-blue-700 text-xs text-center">
+                            {((total / dailyGoal) * 100).toFixed(1)}% da meta
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Breakdown rápido */}
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="text-xs text-gray-600 space-y-1">
+                          <div className="flex justify-between">
+                            <span>Entradas:</span>
+                            <span className="font-semibold text-emerald-600">{formatCurrency(totalEntradasCompleto)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Saídas:</span>
+                            <span className="font-semibold text-red-600">{formatCurrency(totalSaidasCalculado)}</span>
+                          </div>
+                          {previousDayRecord && (
+                            <div className="flex justify-between text-[10px] text-gray-500 mt-1 pt-1 border-t border-gray-100">
+                              <span>Vs. Ontem:</span>
+                              <span className={variationValor && variationValor >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                                {variationValor !== null && (variationValor >= 0 ? '+' : '')}{formatCurrency(variationValor || 0)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Botão para copiar valor */}
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(formatCurrency(total));
+                          setNotification({
+                            type: 'success',
+                            message: 'Valor copiado para a área de transferência!',
+                            isVisible: true
+                          });
+                        }}
+                        className="w-full mt-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                        title="Copiar valor (Ctrl+C)"
+                      >
+                        <span>📋</span>
+                        <span>Copiar Valor</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -4243,7 +6291,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                             <div className="mb-1.5">
                               <p className="text-[10px]">❌ Valores dos clientes PIX Conta devem bater.</p>
                               <p className="mt-0.5 text-[10px]">
-                                Total: {formatCurrency(entries.pixContaClientes.reduce((sum, cliente) => sum + cliente.valor, 0))} | 
+                                Total: {formatCurrency(totalPixContaClientes)} | 
                                 Esperado: {formatCurrency(entries.pixConta)}
                               </p>
                             </div>
@@ -4367,6 +6415,19 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                         <FileText className="w-5 h-5 relative z-10 group-hover:animate-bounce" />
                         <span className="relative z-10 hidden sm:inline">Fechar Movimento</span>
                       </button>
+                      
+                      {/* Botão de Fechamento Parcial */}
+                      <button
+                        onClick={() => setShowFechamentoParcialModal(true)}
+                        className="w-full bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-600 text-white px-6 py-4 rounded-xl hover:from-blue-600 hover:via-cyan-600 hover:to-blue-700 active:from-blue-700 active:via-cyan-700 active:to-blue-800 transition-all duration-300 font-semibold text-sm flex items-center justify-center gap-3 shadow-lg hover:shadow-xl transform hover:scale-105 relative overflow-hidden group"
+                        title="Fechamento Parcial - Para troca de operador (almoço, pausa, etc.)"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        <Clock className="w-5 h-5 relative z-10 group-hover:animate-pulse" />
+                        <span className="relative z-10 hidden sm:inline">Fechamento Parcial</span>
+                        <span className="relative z-10 sm:hidden">Parcial</span>
+                      </button>
+                      
                       {getChecklistFechamento.hasErrors && (
                         <p className="text-xs text-red-600 text-center">
                           Corrija os erros acima para fechar o movimento
@@ -4458,19 +6519,19 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     {/* Indicadores de Status e Alertas */}
                     <div className="mb-4 space-y-2">
                       {/* Badge de Meta */}
-                      {total >= dailyGoal && (
+                      {totalEntradasCompleto >= dailyGoal && (
                         <div className="flex items-center gap-2 px-3 py-2 bg-emerald-100 border border-emerald-200 rounded-lg">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                           <span className="text-sm font-medium text-emerald-800">
-                            Meta diária atingida! ({((total / dailyGoal) * 100).toFixed(1)}%)
+                            Meta diária atingida! ({((totalEntradasCompleto / dailyGoal) * 100).toFixed(1)}%)
                           </span>
                         </div>
                       )}
-                      {total >= dailyGoal * 0.9 && total < dailyGoal && (
+                      {totalEntradasCompleto >= dailyGoal * 0.9 && totalEntradasCompleto < dailyGoal && (
                         <div className="flex items-center gap-2 px-3 py-2 bg-blue-100 border border-blue-200 rounded-lg">
                           <Info className="w-4 h-4 text-blue-600" />
                           <span className="text-sm font-medium text-blue-800">
-                            Próximo da meta: {formatCurrency(dailyGoal - total)} restantes
+                            Próximo da meta: {formatCurrency(dailyGoal - totalEntradasCompleto)} restantes
                           </span>
                         </div>
                       )}
@@ -4488,12 +6549,12 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                       {/* Badge de Movimentação Alta */}
                       {dailyHistory.length > 0 && (() => {
                         const averageTotal = dailyHistory.reduce((sum, record) => sum + (record.entradas || 0), 0) / dailyHistory.length;
-                        if (totalEntradas > averageTotal * 1.5) {
+                        if (averageTotal > 0 && totalEntradasCompleto > averageTotal * 1.5) {
                           return (
                             <div className="flex items-center gap-2 px-3 py-2 bg-yellow-100 border border-yellow-200 rounded-lg">
                               <AlertTriangle className="w-4 h-4 text-yellow-600" />
                               <span className="text-sm font-medium text-yellow-800">
-                                Movimentação acima do normal ({((totalEntradas / averageTotal - 1) * 100).toFixed(1)}% acima da média)
+                                Movimentação acima do normal ({((totalEntradasCompleto / averageTotal - 1) * 100).toFixed(1)}% acima da média)
                               </span>
                             </div>
                           );
@@ -4724,6 +6785,125 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
         type="info"
       />
 
+      {/* Modal de Fechamento Parcial */}
+      {showFechamentoParcialModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Fechamento Parcial</h2>
+                  <p className="text-sm text-gray-500">Troca de operador de caixa</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFechamentoParcialModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-semibold mb-1">O que é Fechamento Parcial?</p>
+                    <p>Use esta função quando precisar trocar o operador de caixa (almoço, pausa, fim de turno). O sistema registra o estado atual do caixa e permite que outro operador continue o trabalho sem perder o controle.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Operador que está saindo *
+                </label>
+                <input
+                  type="text"
+                  value={fechamentoParcialData.operadorSaida}
+                  onChange={(e) => setFechamentoParcialData(prev => ({ ...prev, operadorSaida: e.target.value }))}
+                  placeholder="Nome do operador que está saindo"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Operador que está entrando *
+                </label>
+                <input
+                  type="text"
+                  value={fechamentoParcialData.operadorEntrada}
+                  onChange={(e) => setFechamentoParcialData(prev => ({ ...prev, operadorEntrada: e.target.value }))}
+                  placeholder="Nome do operador que está entrando"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Observações (opcional)
+                </label>
+                <textarea
+                  value={fechamentoParcialData.observacoes}
+                  onChange={(e) => setFechamentoParcialData(prev => ({ ...prev, observacoes: e.target.value }))}
+                  placeholder="Ex: Pausa para almoço, Troca de turno, etc."
+                  rows={3}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Resumo do estado atual */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-semibold text-gray-700 mb-2">Estado Atual do Caixa:</p>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Total Entradas:</span>
+                  <span className="font-semibold text-green-600">{formatCurrency(totalEntradas)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Total Saídas:</span>
+                  <span className="font-semibold text-red-600">{formatCurrency(totalSaidasCalculado)}</span>
+                </div>
+                <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
+                  <span className="text-gray-700 font-semibold">Saldo em Caixa:</span>
+                  <span className="font-bold text-blue-600 text-lg">{formatCurrency(total)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowFechamentoParcialModal(false);
+                  setFechamentoParcialData({
+                    operadorSaida: user || '',
+                    operadorEntrada: '',
+                    observacoes: ''
+                  });
+                }}
+                className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleFechamentoParcial}
+                disabled={!fechamentoParcialData.operadorSaida || !fechamentoParcialData.operadorEntrada}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-all duration-300 font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Clock className="w-5 h-5" />
+                Confirmar Fechamento Parcial
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* NOTIFICATION */}
       <Notification
         type={notification.type}
@@ -4759,6 +6939,100 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
         onClose={() => setShowOwnerPanel(false)}
         onConfigUpdate={(config) => setCompanyConfig(config)}
       />
+
+      {/* Modal PIM - Comissão Puxador */}
+      {showPuxadorPimModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full my-8">
+            <div className="bg-gradient-to-r from-red-500 to-red-600 text-white p-6 rounded-t-2xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Autorizar Alteração de %</h2>
+                  <p className="text-red-100 text-sm">Código PIM para editar a comissão do puxador</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPuxadorPimModal(false);
+                  setPuxadorPimCode('');
+                  setPuxadorPimError('');
+                }}
+                className="text-white/80 hover:text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Código PIM (4 dígitos) *</label>
+                <input
+                  type="text"
+                  value={puxadorPimCode}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                    setPuxadorPimCode(value);
+                    setPuxadorPimError('');
+                  }}
+                  className={`w-full px-4 py-3.5 border-2 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-mono text-center text-xl tracking-widest ${puxadorPimError ? 'border-red-500 bg-red-50' : 'border-gray-300 bg-white'}`}
+                  placeholder="0000"
+                  maxLength={4}
+                  autoFocus
+                />
+                {puxadorPimError && (
+                  <p className="mt-2 text-sm text-red-600 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    {puxadorPimError}
+                  </p>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">🔒 Apenas usuários autorizados podem alterar o percentual do puxador.</p>
+            </div>
+
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowPuxadorPimModal(false);
+                  setPuxadorPimCode('');
+                  setPuxadorPimError('');
+                }}
+                className="px-5 py-3 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (!puxadorPimCode || puxadorPimCode.length !== 4) {
+                    setPuxadorPimError('Informe o código PIM de 4 dígitos');
+                    return;
+                  }
+                  if (!validatePIM(puxadorPimCode)) {
+                    setPuxadorPimError('Código PIM incorreto');
+                    return;
+                  }
+                  setCanEditPuxadorPercent(true);
+                  setShowPuxadorPimModal(false);
+                  setPuxadorPimCode('');
+                  setPuxadorPimError('');
+                  setNotification({
+                    type: 'success',
+                    message: 'Edição da % do puxador liberada nesta sessão.',
+                    isVisible: true
+                  });
+                }}
+                className="px-5 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl hover:from-red-700 hover:to-red-800 transition-all shadow-md text-sm font-semibold"
+              >
+                Autorizar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Limitação de Acesso */}
       <AccessLimitationModal
@@ -5251,7 +7525,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
         isOpen={showPDVIntegrationModal}
         onClose={() => setShowPDVIntegrationModal(false)}
         onImportSales={(importedEntries) => {
-          // Aplicar entradas importadas - SOMAR aos valores existentes
+          // Aplicar entradas importadas - SOMAR aos valores existentes com precisão
           const importedDetails: string[] = [];
           const fieldsToUpdate: Array<{ field: keyof typeof entries; value: number }> = [];
           
@@ -5262,9 +7536,9 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
               
               // Verificar se o campo existe em entries
               if (fieldName in entries) {
-                // Obter valor atual e somar
+                // Obter valor atual e somar com precisão
                 const currentValue = entries[fieldName] as number || 0;
-                const newValue = currentValue + value;
+                const newValue = preciseCurrency.add(currentValue, value);
                 
                 fieldsToUpdate.push({ field: fieldName, value: newValue });
                 
@@ -5293,7 +7567,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
           if (importedDetails.length > 0) {
             setNotification({
               type: 'success',
-              message: `✅ ${fieldsToUpdate.length} método(s) de pagamento importado(s)!\n\n${importedDetails.join('\n')}`,
+              message: `✅ ${fieldsToUpdate.length} método(s) de pagamento importado(s) do PDV!\n\n${importedDetails.join('\n')}`,
               isVisible: true
             });
           } else {
@@ -5310,6 +7584,31 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
       <WebhooksModal
         isOpen={showWebhooksModal}
         onClose={() => setShowWebhooksModal(false)}
+      />
+
+      {/* Modal de Gestão de Categorias */}
+      <CategoryManager
+        isOpen={showCategoryManager}
+        onClose={() => setShowCategoryManager(false)}
+      />
+
+      {/* Modal de Confirmação para Valores Altos */}
+      <ConfirmHighValueModal
+        isOpen={showHighValueConfirm}
+        value={pendingHighValueAction?.value || 0}
+        description={pendingHighValueAction?.description || 'Operação de alto valor'}
+        onConfirm={() => {
+          if (pendingHighValueAction) {
+            pendingHighValueAction.callback();
+            setPendingHighValueAction(null);
+          }
+          setShowHighValueConfirm(false);
+        }}
+        onCancel={() => {
+          setPendingHighValueAction(null);
+          setShowHighValueConfirm(false);
+        }}
+        threshold={10000}
       />
 
       {/* Modal para Adicionar/Editar Nova Saída Retirada */}

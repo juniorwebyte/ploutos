@@ -5,13 +5,49 @@ import { PerformanceUtils } from '../config/performance';
 export function useCadernoNotas() {
   const [notas, setNotas] = useState<NotaFiscal[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'todos' | 'ativa' | 'vencida' | 'quitada'>('todos');
+  const [filterStatus, setFilterStatus] = useState<'todos' | 'ativa' | 'vencida' | 'quitada' | 'parcialmente_paga'>('todos');
 
-  // Carregar dados do localStorage com cache
+  // Carregar dados do localStorage com cache e migração
   const loadData = useCallback(() => {
     return PerformanceUtils.cacheResult('cadernoNotasData', () => {
+      // Tentar carregar de cadernoNotasData
       const savedData = localStorage.getItem('cadernoNotasData');
-      return savedData ? JSON.parse(savedData) : { notas: [] };
+      let notas: NotaFiscal[] = savedData ? JSON.parse(savedData).notas || [] : [];
+      
+      // Migrar dados de ploutos_notas_fiscais se existir
+      const oldData = localStorage.getItem('ploutos_notas_fiscais');
+      if (oldData) {
+        try {
+          const oldNotas: NotaFiscal[] = JSON.parse(oldData);
+          // Mesclar notas, evitando duplicatas por ID
+          const existingIds = new Set(notas.map(n => n.id));
+          const newNotas = oldNotas.filter(n => !existingIds.has(n.id));
+          notas = [...notas, ...newNotas];
+          
+          // Salvar dados migrados
+          if (newNotas.length > 0) {
+            const dataToSave: CadernoNotasData = {
+              notas,
+              totalNotas: notas.length,
+              valorTotal: notas.reduce((sum, nota) => sum + nota.total, 0),
+              valorVencido: 0,
+              valorVencendo: 0,
+              dataUltimaAtualizacao: new Date().toISOString()
+            };
+            localStorage.setItem('cadernoNotasData', JSON.stringify(dataToSave));
+          }
+        } catch (e) {
+          console.error('Erro ao migrar dados:', e);
+        }
+      }
+      
+      // Garantir que todas as notas tenham parcelas como array
+      notas = notas.map(nota => ({
+        ...nota,
+        parcelas: nota.parcelas || []
+      }));
+      
+      return { notas };
     });
   }, []);
 
@@ -73,15 +109,90 @@ export function useCadernoNotas() {
   const stats = useMemo(() => {
     return PerformanceUtils.cacheResult(
       `stats_${notas.length}_${notas.reduce((sum, nota) => sum + nota.total, 0)}`,
-      () => ({
+      () => {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        
+        // Calcular parcelas
+        let totalParcelas = 0;
+        let parcelasPendentes = 0;
+        let parcelasVencidas = 0;
+        let parcelasPagas = 0;
+        let valorParcelasPendentes = 0;
+        let valorParcelasVencidas = 0;
+        
+        notas.forEach(nota => {
+          if (nota.parcelas && nota.parcelas.length > 0) {
+            totalParcelas += nota.parcelas.length;
+            nota.parcelas.forEach(parcela => {
+              if (parcela.status === 'paga') {
+                parcelasPagas++;
+              } else {
+                parcelasPendentes++;
+                valorParcelasPendentes += parcela.valor;
+                
+                const vencimento = new Date(parcela.dataVencimento);
+                vencimento.setHours(0, 0, 0, 0);
+                if (vencimento < hoje) {
+                  parcelasVencidas++;
+                  valorParcelasVencidas += parcela.valor;
+                }
+              }
+            });
+          }
+        });
+        
+        // Calcular valor vencendo (próximos 7 dias)
+        const valorVencendo = notas
+          .filter(nota => {
+            if (nota.parcelas && nota.parcelas.length > 0) {
+              return nota.parcelas.some(p => {
+                const vencimento = new Date(p.dataVencimento);
+                vencimento.setHours(0, 0, 0, 0);
+                const diffDays = Math.ceil((vencimento.getTime() - hoje.getTime()) / (1000 * 3600 * 24));
+                return diffDays <= 7 && diffDays >= 0 && p.status === 'pendente';
+              });
+            }
+            if (nota.vencimento) {
+              const vencimento = new Date(nota.vencimento);
+              vencimento.setHours(0, 0, 0, 0);
+              const diffDays = Math.ceil((vencimento.getTime() - hoje.getTime()) / (1000 * 3600 * 24));
+              return diffDays <= 7 && diffDays >= 0 && nota.status === 'ativa';
+            }
+            return false;
+          })
+          .reduce((sum, nota) => {
+            if (nota.parcelas && nota.parcelas.length > 0) {
+              return sum + nota.parcelas
+                .filter(p => {
+                  const vencimento = new Date(p.dataVencimento);
+                  vencimento.setHours(0, 0, 0, 0);
+                  const diffDays = Math.ceil((vencimento.getTime() - hoje.getTime()) / (1000 * 3600 * 24));
+                  return diffDays <= 7 && diffDays >= 0 && p.status === 'pendente';
+                })
+                .reduce((s, p) => s + p.valor, 0);
+            }
+            return sum + nota.total;
+          }, 0);
+        
+        return {
         total: notas.reduce((sum, nota) => sum + nota.total, 0),
         ativas: notas.filter(nota => nota.status === 'ativa').length,
         vencidas: notas.filter(nota => nota.status === 'vencida').length,
         quitadas: notas.filter(nota => nota.status === 'quitada').length,
+          parcialmentePagas: notas.filter(nota => nota.status === 'parcialmente_paga').length,
         valorVencido: notas
           .filter(nota => nota.status === 'vencida')
-          .reduce((sum, nota) => sum + nota.total, 0)
-      })
+            .reduce((sum, nota) => sum + nota.total, 0),
+          valorVencendo,
+          totalParcelas,
+          parcelasPendentes,
+          parcelasVencidas,
+          parcelasPagas,
+          valorParcelasPendentes,
+          valorParcelasVencidas
+        };
+      }
     );
   }, [notas]);
 

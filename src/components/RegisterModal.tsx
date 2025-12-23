@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { X, User, Mail, Phone, Building, Lock, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, User, Mail, Phone, Building, Lock, Eye, EyeOff, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import whatsappService from '../services/whatsappService';
 import backendService from '../services/backendService';
+import { validateCPF, formatCPF, validateCNPJ, formatCNPJ, validatePhone, formatPhone } from '../services/validationService';
+import { cnpjService } from '../services/cnpjService';
+import cepService from '../services/cepService';
 
 interface RegisterModalProps {
   onClose: () => void;
@@ -25,48 +28,86 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onClose, onSuccess, userT
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [validations, setValidations] = useState({
+    cpf: { isValid: true, message: '' },
+    cnpj: { isValid: true, message: '' },
+    phone: { isValid: true, message: '' },
+  });
+  const [loadingCNPJ, setLoadingCNPJ] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, '');
-    if (value.length <= 11) {
-      setFormData(prev => ({ ...prev, phone: value }));
+  const handlePhoneChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatPhone(e.target.value);
+    setFormData(prev => ({ ...prev, phone: formatted.replace(/\D/g, '') }));
+    if (formatted.replace(/\D/g, '').length >= 10) {
+      const isValid = validatePhone(formatted);
+      setValidations(prev => ({
+        ...prev,
+        phone: { isValid, message: isValid ? '' : 'Telefone inválido' },
+      }));
+    } else {
+      setValidations(prev => ({ ...prev, phone: { isValid: true, message: '' } }));
     }
   };
 
-  const handleCnpjChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, '');
-    if (value.length <= 14) {
-      setFormData(prev => ({ ...prev, cnpj: value }));
+  const handleCnpjChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatCNPJ(e.target.value);
+    const cleanCNPJ = formatted.replace(/\D/g, '');
+    
+    setFormData(prev => ({ ...prev, cnpj: cleanCNPJ }));
+    
+    if (cleanCNPJ.length === 14) {
+      const isValid = validateCNPJ(formatted);
+      setValidations(prev => ({
+        ...prev,
+        cnpj: { isValid, message: isValid ? '' : 'CNPJ inválido' },
+      }));
+      
+      // Buscar automaticamente quando CNPJ for válido
+      if (isValid && !loadingCNPJ) {
+        console.log('🔍 Iniciando busca automática de CNPJ:', formatted);
+        setLoadingCNPJ(true);
+        try {
+          const cnpjData = await cnpjService.consultarCNPJ(formatted);
+          console.log('📦 Dados recebidos:', cnpjData);
+          
+          if (cnpjData) {
+            setFormData((prev) => ({
+              ...prev,
+              cnpj: cleanCNPJ,
+              company: prev.company || cnpjData.nome_fantasia || cnpjData.razao_social || '',
+            }));
+            console.log('✅ Dados da empresa preenchidos automaticamente');
+          } else {
+            console.warn('⚠️ CNPJ não encontrado na API');
+          }
+        } catch (error: any) {
+          console.error('❌ Erro ao buscar CNPJ:', error);
+        } finally {
+          setLoadingCNPJ(false);
+        }
+      }
+    } else {
+      setValidations(prev => ({ ...prev, cnpj: { isValid: true, message: '' } }));
     }
   };
 
   const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, '');
-    if (value.length <= 11) {
-      setFormData(prev => ({ ...prev, cpf: value }));
+    const formatted = formatCPF(e.target.value);
+    setFormData(prev => ({ ...prev, cpf: formatted.replace(/\D/g, '') }));
+    if (formatted.replace(/\D/g, '').length === 11) {
+      const isValid = validateCPF(formatted);
+      setValidations(prev => ({
+        ...prev,
+        cpf: { isValid, message: isValid ? '' : 'CPF inválido' },
+      }));
+    } else {
+      setValidations(prev => ({ ...prev, cpf: { isValid: true, message: '' } }));
     }
-  };
-
-  const formatPhone = (phone: string) => {
-    if (phone.length === 11) {
-      return phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
-    } else if (phone.length === 10) {
-      return phone.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
-    }
-    return phone;
-  };
-
-  const formatCnpj = (cnpj: string) => {
-    return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
-  };
-
-  const formatCpf = (cpf: string) => {
-    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   };
 
   const validateForm = () => {
@@ -242,16 +283,26 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onClose, onSuccess, userT
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <Phone className="w-4 h-4 inline mr-2" />
                 WhatsApp *
+                {formData.phone && (
+                  <span className={`ml-2 text-xs ${validations.phone.isValid ? 'text-green-600' : 'text-red-600'}`}>
+                    {validations.phone.isValid ? '✓ Válido' : '✗ Inválido'}
+                  </span>
+                )}
               </label>
               <input
                 type="tel"
                 name="phone"
                 value={formatPhone(formData.phone)}
                 onChange={handlePhoneChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  formData.phone && !validations.phone.isValid ? 'border-red-500' : 'border-gray-300'
+                }`}
                 placeholder="(11) 99999-9999"
                 required
               />
+              {!validations.phone.isValid && formData.phone && (
+                <p className="text-xs text-red-600 mt-1">{validations.phone.message}</p>
+              )}
             </div>
 
             {userType === 'pessoa-juridica' && (
@@ -275,16 +326,28 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onClose, onSuccess, userT
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     CNPJ *
+                    {formData.cnpj && (
+                      <span className={`ml-2 text-xs ${validations.cnpj.isValid ? 'text-green-600' : 'text-red-600'}`}>
+                        {validations.cnpj.isValid ? '✓ Válido' : '✗ Inválido'}
+                      </span>
+                    )}
+                    {loadingCNPJ && <Loader2 className="w-4 h-4 inline ml-2 animate-spin text-blue-600" />}
                   </label>
                   <input
                     type="text"
                     name="cnpj"
-                    value={formatCnpj(formData.cnpj)}
+                    value={formatCNPJ(formData.cnpj)}
                     onChange={handleCnpjChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    maxLength={18}
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      formData.cnpj && !validations.cnpj.isValid ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     placeholder="00.000.000/0000-00"
                     required
                   />
+                  {!validations.cnpj.isValid && formData.cnpj && (
+                    <p className="text-xs text-red-600 mt-1">{validations.cnpj.message}</p>
+                  )}
                 </div>
               </>
             )}

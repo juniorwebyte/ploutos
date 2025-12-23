@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Phone, User, Mail, Building, MessageSquare, CheckCircle, AlertCircle } from 'lucide-react';
 import whatsappService from '../services/whatsappService';
 import backendService from '../services/backendService';
+import { validatePhone, formatPhone as formatPhoneValidation } from '../services/validationService';
 
 interface ClientRegistrationProps {
   onClose: () => void;
@@ -28,6 +29,9 @@ const ClientRegistration: React.FC<ClientRegistrationProps> = ({ onClose, onSucc
   const [cooldown, setCooldown] = useState(0); // segundos para reenvio
   const [attempts, setAttempts] = useState(0);
   const maxAttempts = 3;
+  const [validations, setValidations] = useState({
+    phone: { isValid: true, message: '' },
+  });
 
   // Contadores de tempo para expiração e cooldown
   useEffect(() => {
@@ -50,19 +54,24 @@ const ClientRegistration: React.FC<ClientRegistrationProps> = ({ onClose, onSucc
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, '');
-    if (value.length <= 11) {
-      setFormData(prev => ({ ...prev, phone: value }));
+    const formatted = formatPhoneValidation(e.target.value);
+    const cleanPhone = formatted.replace(/\D/g, '');
+    if (cleanPhone.length <= 11) {
+      setFormData(prev => ({ ...prev, phone: cleanPhone }));
+      if (cleanPhone.length >= 10) {
+        const isValid = validatePhone(formatted);
+        setValidations(prev => ({
+          ...prev,
+          phone: { isValid, message: isValid ? '' : 'Telefone inválido' },
+        }));
+      } else {
+        setValidations(prev => ({ ...prev, phone: { isValid: true, message: '' } }));
+      }
     }
   };
 
   const formatPhone = (phone: string) => {
-    if (phone.length === 11) {
-      return phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
-    } else if (phone.length === 10) {
-      return phone.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
-    }
-    return phone;
+    return formatPhoneValidation(phone);
   };
 
   const sendWhatsAppCode = async () => {
@@ -328,16 +337,26 @@ const ClientRegistration: React.FC<ClientRegistrationProps> = ({ onClose, onSucc
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     <Phone className="w-4 h-4 inline mr-2" />
                     WhatsApp *
+                    {formData.phone && (
+                      <span className={`ml-2 text-xs ${validations.phone.isValid ? 'text-green-600' : 'text-red-600'}`}>
+                        {validations.phone.isValid ? '✓ Válido' : '✗ Inválido'}
+                      </span>
+                    )}
                   </label>
                   <input
                     type="tel"
                     name="phone"
                     value={formatPhone(formData.phone)}
                     onChange={handlePhoneChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      formData.phone && !validations.phone.isValid ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     placeholder="(11) 99999-9999"
                     required
                   />
+                  {!validations.phone.isValid && formData.phone && (
+                    <p className="text-xs text-red-600 mt-1">{validations.phone.message}</p>
+                  )}
                   <p className="text-xs text-gray-500 mt-1">
                     Inclua o DDD. Exemplo: (11) 99999-9999
                   </p>

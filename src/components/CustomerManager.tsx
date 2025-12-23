@@ -17,10 +17,13 @@ import {
   Save,
   RefreshCw,
   Download,
-  Upload
+  Upload,
+  Loader2
 } from 'lucide-react';
 import paymentGatewayService from '../services/paymentGatewayService';
 import { formatPhone, formatCEP, unformatPhone, unformatCEP } from '../utils/formatters';
+import { validatePhone, formatPhone as formatPhoneValidation, validateCEP, formatCEP as formatCEPValidation } from '../services/validationService';
+import cepService from '../services/cepService';
 
 interface CustomerManagerProps {
   onClose: () => void;
@@ -528,17 +531,39 @@ function CustomerManager({ onClose }: CustomerManagerProps) {
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Telefone</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Telefone
+                      {formData.phone && (
+                        <span className={`ml-2 text-xs ${validations.phone.isValid ? 'text-green-600' : 'text-red-600'}`}>
+                          {validations.phone.isValid ? '✓ Válido' : '✗ Inválido'}
+                        </span>
+                      )}
+                    </label>
                     <input
                       type="tel"
                       value={formatPhone(formData.phone)}
                       onChange={(e) => {
-                        const unformatted = unformatPhone(e.target.value);
+                        const formatted = formatPhoneValidation(e.target.value);
+                        const unformatted = unformatPhone(formatted);
                         setFormData(prev => ({ ...prev, phone: unformatted }));
+                        if (unformatted.length >= 10) {
+                          const isValid = validatePhone(formatted);
+                          setValidations(prev => ({
+                            ...prev,
+                            phone: { isValid, message: isValid ? '' : 'Telefone inválido' },
+                          }));
+                        } else {
+                          setValidations(prev => ({ ...prev, phone: { isValid: true, message: '' } }));
+                        }
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent ${
+                        formData.phone && !validations.phone.isValid ? 'border-red-500' : 'border-gray-300'
+                      }`}
                       placeholder="(11) 99999-9999"
                     />
+                    {!validations.phone.isValid && formData.phone && (
+                      <p className="text-xs text-red-600 mt-1">{validations.phone.message}</p>
+                    )}
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -589,18 +614,76 @@ function CustomerManager({ onClose }: CustomerManagerProps) {
                     </div>
                     
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">CEP</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        CEP
+                        {formData.postal_code && formData.postal_code.replace(/\D/g, '').length === 8 && (
+                          <span className={`ml-2 text-xs ${validations.cep.isValid ? 'text-green-600' : 'text-red-600'}`}>
+                            {validations.cep.isValid ? '✓ Válido' : '✗ Inválido'}
+                          </span>
+                        )}
+                        {loadingCEP && <Loader2 className="w-4 h-4 inline ml-2 animate-spin text-orange-600" />}
+                      </label>
                       <input
                         type="text"
                         value={formatCEP(formData.postal_code)}
-                        onChange={(e) => {
-                          const unformatted = unformatCEP(e.target.value);
+                        onChange={async (e) => {
+                          const formatted = formatCEPValidation(e.target.value);
+                          const unformatted = unformatCEP(formatted);
                           setFormData(prev => ({ ...prev, postal_code: unformatted }));
+                          
+                          if (unformatted.length === 8) {
+                            const isValid = validateCEP(formatted);
+                            setValidations(prev => ({
+                              ...prev,
+                              cep: { isValid, message: isValid ? '' : 'CEP inválido' },
+                            }));
+                            
+                            if (isValid) {
+                              setLoadingCEP(true);
+                              try {
+                                const cepData = await cepService.buscarCEP(formatted);
+                                if (cepData) {
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    postal_code: unformatted,
+                                    address_line1: prev.address_line1 || cepData.logradouro || '',
+                                    city: prev.city || cepData.localidade || '',
+                                    state: prev.state || cepData.uf || '',
+                                  }));
+                                } else {
+                                  setValidations(prev => ({
+                                    ...prev,
+                                    cep: { isValid: false, message: 'CEP não encontrado' },
+                                  }));
+                                }
+                              } catch (error) {
+                                console.error('Erro ao buscar CEP:', error);
+                                setValidations(prev => ({
+                                  ...prev,
+                                  cep: { isValid: false, message: 'Erro ao buscar CEP' },
+                                }));
+                              } finally {
+                                setLoadingCEP(false);
+                              }
+                            }
+                          } else {
+                            setValidations(prev => ({ ...prev, cep: { isValid: true, message: '' } }));
+                          }
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent ${
+                          formData.postal_code && formData.postal_code.replace(/\D/g, '').length === 8 && !validations.cep.isValid
+                            ? 'border-red-500'
+                            : 'border-gray-300'
+                        }`}
                         placeholder="01234-567"
                         maxLength={9}
                       />
+                      {!validations.cep.isValid && formData.postal_code && formData.postal_code.replace(/\D/g, '').length === 8 && (
+                        <p className="text-xs text-red-600 mt-1">{validations.cep.message}</p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        Digite o CEP para preencher automaticamente o endereço
+                      </p>
                     </div>
                   </div>
                   

@@ -1,13 +1,15 @@
 // Serviço de Sincronização em Tempo Real
 export interface SyncEvent {
   id: string;
-  type: 'nota_fiscal' | 'parcela' | 'pagamento' | 'usuario' | 'plano' | 'chat' | 'sistema';
-  action: 'create' | 'update' | 'delete' | 'status_change';
+  type: 'nota_fiscal' | 'parcela' | 'pagamento' | 'usuario' | 'plano' | 'chat' | 'sistema' | 'cashflow' | 'pdv';
+  action: 'create' | 'update' | 'delete' | 'status_change' | 'sync';
   entityId: string;
   data: any;
   timestamp: Date;
-  source: 'landing' | 'admin' | 'client' | 'system';
+  source: 'landing' | 'admin' | 'client' | 'system' | 'pdv' | 'cashflow';
   userId?: string;
+  retryCount?: number;
+  status?: 'pending' | 'success' | 'failed';
 }
 
 class SyncService {
@@ -101,14 +103,16 @@ class SyncService {
     const event: SyncEvent = {
       id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date(),
+      status: 'pending',
+      retryCount: 0,
       ...eventData
     };
 
     this.events.unshift(event);
     
-    // Manter apenas os últimos 1000 eventos
-    if (this.events.length > 1000) {
-      this.events = this.events.slice(0, 1000);
+    // Manter apenas os últimos 2000 eventos (aumentado para melhor histórico)
+    if (this.events.length > 2000) {
+      this.events = this.events.slice(0, 2000);
     }
 
     this.saveEvents();
@@ -116,7 +120,12 @@ class SyncService {
 
     // Se estiver online, processar imediatamente
     if (this.isOnline) {
+      try {
       this.processEvent(event);
+        this.markEventAsProcessed(event.id, true);
+      } catch (error) {
+        this.markEventAsProcessed(event.id, false);
+      }
     }
   }
 
@@ -166,10 +175,27 @@ class SyncService {
   // Processar eventos pendentes quando voltar online
   private processPendingEvents() {
     const pendingEvents = this.events.filter(e => 
-      e.timestamp > new Date(Date.now() - 5 * 60 * 1000) // Últimos 5 minutos
+      (e.status === 'pending' || !e.status) &&
+      e.timestamp > new Date(Date.now() - 24 * 60 * 60 * 1000) // Últimas 24 horas
     );
     
-    pendingEvents.forEach(event => this.processEvent(event));
+    pendingEvents.forEach(event => {
+      if ((event.retryCount || 0) < 3) {
+        this.processEvent(event);
+      }
+    });
+  }
+  
+  // Marcar evento como processado
+  private markEventAsProcessed(eventId: string, success: boolean) {
+    const event = this.events.find(e => e.id === eventId);
+    if (event) {
+      event.status = success ? 'success' : 'failed';
+      if (!success) {
+        event.retryCount = (event.retryCount || 0) + 1;
+      }
+      this.saveEvents();
+    }
   }
 
   // Sincronizar nota fiscal

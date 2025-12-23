@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { CashFlowEntry, CashFlowExit, Cancelamento, Cheque, SaidaRetirada, Puxador } from '../types';
+import { CashFlowEntry, CashFlowExit, Cancelamento, Cheque, SaidaRetirada, Puxador, OutroLancamento, BrindeLancamento } from '../types';
+import { preciseCurrency } from '../utils/currency';
 
 const STORAGE_KEY = 'cashFlowData';
 const FUNDO_CAIXA_KEY = 'fundoCaixaPadrao';
@@ -60,6 +61,20 @@ export const useCashFlow = () => {
     
     // Taxas - múltiplas taxas
     taxas: [],
+    
+    // Novos campos solicitados
+    outros: 0,
+    outrosDescricao: '',
+    outrosLancamentos: [],
+    brindes: 0,
+    brindesDescricao: '',
+    brindesLancamentos: [],
+    crediario: 0,
+    crediarioClientes: [],
+    cartaoPresente: 0,
+    cartaoPresenteClientes: [],
+    cashBack: 0,
+    cashBackClientes: [],
   });
 
   const [exits, setExits] = useState<CashFlowExit>({
@@ -82,6 +97,7 @@ export const useCashFlow = () => {
     puxadorNome: '',
     puxadorPorcentagem: 0,
     puxadorValor: 0,
+    puxadorTotalVendas: 0,
     
     // Múltiplos clientes do puxador
     puxadorClientes: [],
@@ -103,59 +119,87 @@ export const useCashFlow = () => {
   const [hasChanges, setHasChanges] = useState(false);
   const [cancelamentos, setCancelamentos] = useState<Cancelamento[]>([]);
 
-  // Memoizar cálculos para melhor performance
+  // Memoizar cálculos para melhor performance com precisão
   // Calcular total de taxas
   const totalTaxas = useMemo(() => {
-    return Array.isArray(entries.taxas)
-      ? entries.taxas.reduce((sum, taxa) => sum + (Number(taxa.valor) || 0), 0)
-      : 0;
+    if (!Array.isArray(entries.taxas)) return 0;
+    return entries.taxas.reduce((sum, taxa) => {
+      return preciseCurrency.add(sum, Number(taxa.valor) || 0);
+    }, 0);
   }, [entries.taxas]);
 
+  // Calcular total de lançamentos de Outros
+  const totalOutrosLancamentos = useMemo(() => {
+    if (!Array.isArray(entries.outrosLancamentos)) return 0;
+    return entries.outrosLancamentos.reduce((sum, lancamento) => {
+      return preciseCurrency.add(sum, Number(lancamento.valor) || 0);
+    }, 0);
+  }, [entries.outrosLancamentos]);
+
+  // Calcular total de lançamentos de Brindes
+  const totalBrindesLancamentos = useMemo(() => {
+    if (!Array.isArray(entries.brindesLancamentos)) return 0;
+    return entries.brindesLancamentos.reduce((sum, lancamento) => {
+      return preciseCurrency.add(sum, Number(lancamento.valor) || 0);
+    }, 0);
+  }, [entries.brindesLancamentos]);
+
   const totalEntradas = useMemo(() => {
-    // Nota: totalDevolucoes e totalEnviosCorreios são somados separadamente no totalFinal
-    // quando incluidoNoMovimento é true, então não são incluídos aqui
-    return entries.dinheiro + 
-           entries.fundoCaixa + 
-           entries.cartao + 
-           entries.cartaoLink + 
-           entries.boletos + 
-           entries.pixMaquininha + 
-           entries.pixConta +
-           // entries.cheque removido - agora é calculado pela soma dos cheques individuais
-           (entries.outros || 0) +
-           totalTaxas;
-  }, [entries, totalTaxas]);
+    // Usar cálculos precisos para evitar problemas de ponto flutuante
+    const outrosValor = totalOutrosLancamentos > 0 ? totalOutrosLancamentos : (entries.outros || 0);
+    const brindesValor = totalBrindesLancamentos > 0 ? totalBrindesLancamentos : (entries.brindes || 0);
+    
+    return preciseCurrency.add(
+      entries.dinheiro || 0,
+      entries.fundoCaixa || 0,
+      entries.cartao || 0,
+      entries.cartaoLink || 0,
+      entries.boletos || 0,
+      entries.pixMaquininha || 0,
+      entries.pixConta || 0,
+      outrosValor,
+      brindesValor,
+      entries.crediario || 0,
+      entries.cartaoPresente || 0,
+      entries.cashBack || 0,
+      totalTaxas
+    );
+  }, [entries, totalTaxas, totalOutrosLancamentos, totalBrindesLancamentos]);
 
   const totalDevolucoes = useMemo(() => {
-    return Array.isArray(exits.devolucoes)
-      ? exits.devolucoes
+    if (!Array.isArray(exits.devolucoes)) return 0;
+    return exits.devolucoes
           .filter(devolucao => devolucao.incluidoNoMovimento)
-          .reduce((sum, devolucao) => sum + (Number(devolucao.valor) || 0), 0)
-      : 0;
+      .reduce((sum, devolucao) => {
+        return preciseCurrency.add(sum, Number(devolucao.valor) || 0);
+      }, 0);
   }, [exits.devolucoes]);
 
   const totalEnviosCorreios = useMemo(() => {
-    return Array.isArray(exits.enviosCorreios)
-      ? exits.enviosCorreios
+    if (!Array.isArray(exits.enviosCorreios)) return 0;
+    return exits.enviosCorreios
           .filter(envio => envio.incluidoNoMovimento)
-          .reduce((sum, envio) => sum + (Number(envio.valor) || 0), 0)
-      : 0;
+      .reduce((sum, envio) => {
+        return preciseCurrency.add(sum, Number(envio.valor) || 0);
+      }, 0);
   }, [exits.enviosCorreios]);
   
   // Nota: totalEnviosCorreios agora também é usado nas entradas quando incluidoNoMovimento é true
 
   const totalValesFuncionarios = useMemo(() => {
-    return Array.isArray(exits.valesFuncionarios)
-      ? exits.valesFuncionarios.reduce((sum: number, item: { nome: string; valor: number }) => sum + (Number(item.valor) || 0), 0)
-      : 0;
+    if (!Array.isArray(exits.valesFuncionarios)) return 0;
+    return exits.valesFuncionarios.reduce((sum: number, item: { nome: string; valor: number }) => {
+      return preciseCurrency.add(sum, Number(item.valor) || 0);
+    }, 0);
   }, [exits.valesFuncionarios]);
 
   const totalSaidasRetiradas = useMemo(() => {
-    return Array.isArray(exits.saidasRetiradas)
-      ? exits.saidasRetiradas
+    if (!Array.isArray(exits.saidasRetiradas)) return 0;
+    return exits.saidasRetiradas
           .filter(saida => saida.incluidoNoMovimento)
-          .reduce((sum, saida) => sum + (Number(saida.valor) || 0), 0)
-      : 0;
+      .reduce((sum, saida) => {
+        return preciseCurrency.add(sum, Number(saida.valor) || 0);
+      }, 0);
   }, [exits.saidasRetiradas]);
 
   const valesImpactoEntrada = useMemo(() => {
@@ -164,15 +208,25 @@ export const useCashFlow = () => {
 
   // Calcular total dos cheques individuais
   const totalCheques = useMemo(() => {
-    return Array.isArray(entries.cheques)
-      ? entries.cheques.reduce((sum, cheque) => sum + (Number(cheque.valor) || 0), 0)
-      : 0;
+    if (!Array.isArray(entries.cheques)) return 0;
+    return entries.cheques.reduce((sum, cheque) => {
+      return preciseCurrency.add(sum, Number(cheque.valor) || 0);
+    }, 0);
   }, [entries.cheques]);
 
   const totalFinal = useMemo(() => {
+    // Usar cálculos precisos para evitar problemas de ponto flutuante
     // totalEnviosCorreios deve ser somado nas entradas quando incluidoNoMovimento é true
     // totalDevolucoes também deve ser somado nas entradas quando incluidoNoMovimento é true
-    return totalEntradas + totalCheques + totalDevolucoes + totalEnviosCorreios + valesImpactoEntrada - totalSaidasRetiradas;
+    const entradasComAdicionais = preciseCurrency.add(
+      totalEntradas,
+      totalCheques,
+      totalDevolucoes,
+      totalEnviosCorreios,
+      valesImpactoEntrada
+    );
+    
+    return preciseCurrency.subtract(entradasComAdicionais, totalSaidasRetiradas);
   }, [totalEntradas, totalCheques, totalDevolucoes, totalEnviosCorreios, valesImpactoEntrada, totalSaidasRetiradas]);
 
   // Atualizar total sempre que os valores calculados mudarem
@@ -203,18 +257,24 @@ export const useCashFlow = () => {
   // Função para validar valores de saída
   const validateSaidaValues = useCallback(() => {
     if (exits.saida > 0) {
-      // Calcular total das saídas retiradas (novo sistema)
+      // Calcular total das saídas retiradas (novo sistema) com precisão
       const totalSaidasRetiradas = Array.isArray(exits.saidasRetiradas)
-        ? exits.saidasRetiradas.reduce((sum, sr) => sum + (Number(sr.valor) || 0), 0)
+        ? exits.saidasRetiradas.reduce((sum, sr) => {
+            return preciseCurrency.add(sum, Number(sr.valor) || 0);
+          }, 0)
         : 0;
       
       // Manter compatibilidade com campos legados
-      const totalLegado = exits.valorCompra + exits.valorSaidaDinheiro;
+      const totalLegado = preciseCurrency.add(
+        exits.valorCompra || 0,
+        exits.valorSaidaDinheiro || 0
+      );
       
       // Usar o maior valor (se houver saídas retiradas, usar elas; senão usar legado)
       const totalJustificativas = totalSaidasRetiradas > 0 ? totalSaidasRetiradas : totalLegado;
       
-      return totalJustificativas === exits.saida;
+      // Usar comparação precisa
+      return preciseCurrency.equals(totalJustificativas, exits.saida);
     }
     return true;
   }, [exits.saida, exits.valorCompra, exits.valorSaidaDinheiro, exits.saidasRetiradas]);
@@ -236,11 +296,11 @@ export const useCashFlow = () => {
       return false;
     }
 
-    const totalClientes = entries.pixContaClientes.reduce((sum, cliente) => sum + (Number(cliente.valor) || 0), 0);
-    // Comparar em centavos para evitar qualquer erro de ponto flutuante
-    const totalClientesCents = Math.round(totalClientes * 100);
-    const pixContaCents = Math.round((Number(entries.pixConta) || 0) * 100);
-    return totalClientesCents === pixContaCents;
+    const totalClientes = entries.pixContaClientes.reduce((sum, cliente) => {
+      return preciseCurrency.add(sum, Number(cliente.valor) || 0);
+    }, 0);
+    // Usar função de comparação precisa
+    return preciseCurrency.equals(totalClientes, Number(entries.pixConta) || 0);
   }, [entries.pixConta, entries.pixContaClientes]);
 
   // Função para validar valores Cartão Link
@@ -255,11 +315,11 @@ export const useCashFlow = () => {
       return false;
     }
 
-    const totalClientes = entries.cartaoLinkClientes.reduce((sum, cliente) => sum + (Number(cliente.valor) || 0), 0);
-    // Comparar em centavos para evitar qualquer erro de ponto flutuante
-    const totalClientesCents = Math.round(totalClientes * 100);
-    const cartaoLinkCents = Math.round((Number(entries.cartaoLink) || 0) * 100);
-    return totalClientesCents === cartaoLinkCents;
+    const totalClientes = entries.cartaoLinkClientes.reduce((sum, cliente) => {
+      return preciseCurrency.add(sum, Number(cliente.valor) || 0);
+    }, 0);
+    // Usar função de comparação precisa
+    return preciseCurrency.equals(totalClientes, Number(entries.cartaoLink) || 0);
   }, [entries.cartaoLink, entries.cartaoLinkClientes]);
 
   // Função para validar valores Boletos
@@ -274,17 +334,68 @@ export const useCashFlow = () => {
       return false;
     }
 
-    const totalClientes = entries.boletosClientes.reduce((sum, cliente) => sum + (Number(cliente.valor) || 0), 0);
-    // Comparar em centavos para evitar qualquer erro de ponto flutuante
-    const totalClientesCents = Math.round(totalClientes * 100);
-    const boletosCents = Math.round((Number(entries.boletos) || 0) * 100);
-    return totalClientesCents === boletosCents;
+    const totalClientes = entries.boletosClientes.reduce((sum, cliente) => {
+      return preciseCurrency.add(sum, Number(cliente.valor) || 0);
+    }, 0);
+    // Usar função de comparação precisa
+    return preciseCurrency.equals(totalClientes, Number(entries.boletos) || 0);
   }, [entries.boletos, entries.boletosClientes]);
+
+  // Função para validar valores Crediário
+  const validateCrediarioValues = useCallback(() => {
+    if ((entries.crediario || 0) <= 0) {
+      return true;
+    }
+    if ((entries.crediario || 0) > 0 && (!entries.crediarioClientes || entries.crediarioClientes.length === 0)) {
+      return false;
+    }
+    const totalClientes = (entries.crediarioClientes || []).reduce((sum, cliente) => {
+      return preciseCurrency.add(sum, Number(cliente.valor) || 0);
+    }, 0);
+    // Usar função de comparação precisa
+    return preciseCurrency.equals(totalClientes, Number(entries.crediario) || 0);
+  }, [entries.crediario, entries.crediarioClientes]);
+
+  // Função para validar valores Cartão Presente
+  const validateCartaoPresenteValues = useCallback(() => {
+    if ((entries.cartaoPresente || 0) <= 0) {
+      return true;
+    }
+    if ((entries.cartaoPresente || 0) > 0 && (!entries.cartaoPresenteClientes || entries.cartaoPresenteClientes.length === 0)) {
+      return false;
+    }
+    const totalClientes = (entries.cartaoPresenteClientes || []).reduce((sum, cliente) => {
+      return preciseCurrency.add(sum, Number(cliente.valor) || 0);
+    }, 0);
+    // Usar função de comparação precisa
+    return preciseCurrency.equals(totalClientes, Number(entries.cartaoPresente) || 0);
+  }, [entries.cartaoPresente, entries.cartaoPresenteClientes]);
+
+  // Função para validar valores Cash Back
+  const validateCashBackValues = useCallback(() => {
+    if ((entries.cashBack || 0) <= 0) {
+      return true;
+    }
+    if ((entries.cashBack || 0) > 0 && (!entries.cashBackClientes || entries.cashBackClientes.length === 0)) {
+      return false;
+    }
+    const totalClientes = (entries.cashBackClientes || []).reduce((sum, cliente) => {
+      return preciseCurrency.add(sum, Number(cliente.valor) || 0);
+    }, 0);
+    // Usar função de comparação precisa
+    return preciseCurrency.equals(totalClientes, Number(entries.cashBack) || 0);
+  }, [entries.cashBack, entries.cashBackClientes]);
 
   // Função para verificar se pode salvar
   const canSave = useCallback(() => {
-    return validateSaidaValues() && validatePixContaValues() && validateCartaoLinkValues() && validateBoletosValues();
-  }, [validateSaidaValues, validatePixContaValues, validateCartaoLinkValues, validateBoletosValues]);
+    return validateSaidaValues() && 
+           validatePixContaValues() && 
+           validateCartaoLinkValues() && 
+           validateBoletosValues() &&
+           validateCrediarioValues() &&
+           validateCartaoPresenteValues() &&
+           validateCashBackValues();
+  }, [validateSaidaValues, validatePixContaValues, validateCartaoLinkValues, validateBoletosValues, validateCrediarioValues, validateCartaoPresenteValues, validateCashBackValues]);
 
   // Função para adicionar cheque
   const adicionarCheque = useCallback((cheque: Cheque) => {
@@ -389,6 +500,214 @@ export const useCashFlow = () => {
     setHasChanges(true);
   }, []);
 
+  // Função para adicionar cliente Crediário
+  const adicionarCrediarioCliente = useCallback((nome: string, valor: number, parcelas: number) => {
+    setEntries(prev => ({
+      ...prev,
+      crediarioClientes: [...(prev.crediarioClientes || []), { nome, valor, parcelas }]
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para remover cliente Crediário
+  const removerCrediarioCliente = useCallback((index: number) => {
+    setEntries(prev => ({
+      ...prev,
+      crediarioClientes: (prev.crediarioClientes || []).filter((_, i) => i !== index)
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para adicionar cliente Cartão Presente
+  const adicionarCartaoPresenteCliente = useCallback((nome: string, valor: number, parcelas: number) => {
+    setEntries(prev => ({
+      ...prev,
+      cartaoPresenteClientes: [...(prev.cartaoPresenteClientes || []), { nome, valor, parcelas }]
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para remover cliente Cartão Presente
+  const removerCartaoPresenteCliente = useCallback((index: number) => {
+    setEntries(prev => ({
+      ...prev,
+      cartaoPresenteClientes: (prev.cartaoPresenteClientes || []).filter((_, i) => i !== index)
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para adicionar cliente Cash Back (com armazenamento para desconto futuro)
+  const adicionarCashBackCliente = useCallback((nome: string, cpf: string, valor: number) => {
+    const cashBackCliente = {
+      nome,
+      cpf,
+      valor,
+      data: new Date().toISOString(),
+      utilizado: false,
+      valorUtilizado: 0
+    };
+    
+    setEntries(prev => ({
+      ...prev,
+      cashBackClientes: [...(prev.cashBackClientes || []), cashBackCliente]
+    }));
+    setHasChanges(true);
+
+    // Armazenar Cash Back para uso futuro como desconto
+    const cashBackStorageKey = 'cashback_descontos';
+    const storedCashBacks = localStorage.getItem(cashBackStorageKey);
+    let cashBacks: any[] = [];
+    
+    if (storedCashBacks) {
+      try {
+        cashBacks = JSON.parse(storedCashBacks);
+        if (!Array.isArray(cashBacks)) cashBacks = [];
+      } catch (e) {
+        cashBacks = [];
+      }
+    }
+
+    // Verificar se já existe Cash Back para este CPF
+    const existingIndex = cashBacks.findIndex(cb => cb.cpf === cpf);
+    if (existingIndex >= 0) {
+      // Adicionar ao valor existente
+      cashBacks[existingIndex].valor += valor;
+      cashBacks[existingIndex].historico = cashBacks[existingIndex].historico || [];
+      cashBacks[existingIndex].historico.push({
+        valor,
+        data: new Date().toISOString()
+      });
+    } else {
+      // Criar novo registro
+      cashBacks.push({
+        nome,
+        cpf,
+        valor,
+        valorUtilizado: 0,
+        data: new Date().toISOString(),
+        historico: [{
+          valor,
+          data: new Date().toISOString()
+        }]
+      });
+    }
+
+    localStorage.setItem(cashBackStorageKey, JSON.stringify(cashBacks));
+  }, []);
+
+  // Função para remover cliente Cash Back
+  const removerCashBackCliente = useCallback((index: number) => {
+    setEntries(prev => ({
+      ...prev,
+      cashBackClientes: (prev.cashBackClientes || []).filter((_, i) => i !== index)
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para obter Cash Back disponível de um cliente (para usar como desconto)
+  const obterCashBackDisponivel = useCallback((cpf: string): number => {
+    const cashBackStorageKey = 'cashback_descontos';
+    const storedCashBacks = localStorage.getItem(cashBackStorageKey);
+    
+    if (!storedCashBacks) return 0;
+    
+    try {
+      const cashBacks = JSON.parse(storedCashBacks);
+      const cashBack = cashBacks.find((cb: any) => cb.cpf === cpf);
+      if (cashBack) {
+        return cashBack.valor - (cashBack.valorUtilizado || 0);
+      }
+    } catch (e) {
+      // Ignorar erro
+    }
+    
+    return 0;
+  }, []);
+
+  // Função para utilizar Cash Back como desconto
+  const utilizarCashBack = useCallback((cpf: string, valorUtilizado: number) => {
+    const cashBackStorageKey = 'cashback_descontos';
+    const storedCashBacks = localStorage.getItem(cashBackStorageKey);
+    
+    if (!storedCashBacks) return false;
+    
+    try {
+      const cashBacks = JSON.parse(storedCashBacks);
+      const cashBackIndex = cashBacks.findIndex((cb: any) => cb.cpf === cpf);
+      
+      if (cashBackIndex >= 0) {
+        const cashBack = cashBacks[cashBackIndex];
+        const disponivel = cashBack.valor - (cashBack.valorUtilizado || 0);
+        
+        if (valorUtilizado <= disponivel) {
+          cashBacks[cashBackIndex].valorUtilizado = (cashBack.valorUtilizado || 0) + valorUtilizado;
+          localStorage.setItem(cashBackStorageKey, JSON.stringify(cashBacks));
+          return true;
+        }
+      }
+    } catch (e) {
+      // Ignorar erro
+    }
+    
+    return false;
+  }, []);
+
+  // Função para adicionar lançamento de Outros
+  const adicionarOutroLancamento = useCallback((descricao: string, valor: number) => {
+    const novoLancamento: OutroLancamento = {
+      descricao: descricao.trim(),
+      valor
+    };
+    setEntries(prev => ({
+      ...prev,
+      outrosLancamentos: [...(prev.outrosLancamentos || []), novoLancamento],
+      outros: (prev.outros || 0) + valor
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para remover lançamento de Outros
+  const removerOutroLancamento = useCallback((index: number) => {
+    setEntries(prev => {
+      const lancamentoRemovido = (prev.outrosLancamentos || [])[index];
+      const novosLancamentos = (prev.outrosLancamentos || []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        outrosLancamentos: novosLancamentos,
+        outros: (prev.outros || 0) - (lancamentoRemovido?.valor || 0)
+      };
+    });
+    setHasChanges(true);
+  }, []);
+
+  // Função para adicionar lançamento de Brindes
+  const adicionarBrindeLancamento = useCallback((descricao: string, valor: number) => {
+    const novoLancamento: BrindeLancamento = {
+      descricao: descricao.trim(),
+      valor
+    };
+    setEntries(prev => ({
+      ...prev,
+      brindesLancamentos: [...(prev.brindesLancamentos || []), novoLancamento],
+      brindes: (prev.brindes || 0) + valor
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para remover lançamento de Brindes
+  const removerBrindeLancamento = useCallback((index: number) => {
+    setEntries(prev => {
+      const lancamentoRemovido = (prev.brindesLancamentos || [])[index];
+      const novosLancamentos = (prev.brindesLancamentos || []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        brindesLancamentos: novosLancamentos,
+        brindes: (prev.brindes || 0) - (lancamentoRemovido?.valor || 0)
+      };
+    });
+    setHasChanges(true);
+  }, []);
+
   // Função para limpar formulário
   const clearForm = useCallback(() => {
     setEntries({
@@ -410,9 +729,23 @@ export const useCashFlow = () => {
       cliente3Nome: '',
       cliente3Valor: 0,
       pixContaClientes: [],
+      cartaoLinkClientes: [],
+      boletosClientes: [],
       cheque: 0,
       cheques: [],
       taxas: [],
+      outros: 0,
+      outrosDescricao: '',
+      brindes: 0,
+      brindesDescricao: '',
+      crediario: 0,
+      crediarioClientes: [],
+      cartaoPresente: 0,
+      cartaoPresenteClientes: [],
+      cashBack: 0,
+      cashBackClientes: [],
+      outrosLancamentos: [],
+      brindesLancamentos: [],
     });
     setExits({
       descontos: 0,
@@ -430,6 +763,7 @@ export const useCashFlow = () => {
       puxadorNome: '',
       puxadorPorcentagem: 0,
       puxadorValor: 0,
+      puxadorTotalVendas: 0,
       puxadorClientes: [],
       
       // Campos legados para compatibilidade
@@ -495,6 +829,7 @@ export const useCashFlow = () => {
             puxadorNome: parsed.exits.puxadorNome || '',
             puxadorPorcentagem: parsed.exits.puxadorPorcentagem || 0,
             puxadorValor: parsed.exits.puxadorValor || 0,
+            puxadorTotalVendas: parsed.exits.puxadorTotalVendas || 0,
             puxadorClientes: Array.isArray(parsed.exits.puxadorClientes) ? parsed.exits.puxadorClientes : [],
             puxadores: Array.isArray(parsed.exits.puxadores) ? parsed.exits.puxadores : [],
             
@@ -570,6 +905,9 @@ export const useCashFlow = () => {
     validatePixContaValues,
     validateCartaoLinkValues,
     validateBoletosValues,
+    validateCrediarioValues,
+    validateCartaoPresenteValues,
+    validateCashBackValues,
     canSave,
     adicionarCheque,
     removerCheque,
@@ -579,6 +917,20 @@ export const useCashFlow = () => {
     removerCartaoLinkCliente,
     adicionarBoletosCliente,
     removerBoletosCliente,
+    adicionarCrediarioCliente,
+    removerCrediarioCliente,
+    adicionarCartaoPresenteCliente,
+    removerCartaoPresenteCliente,
+    adicionarCashBackCliente,
+    removerCashBackCliente,
+    obterCashBackDisponivel,
+    utilizarCashBack,
+    adicionarOutroLancamento,
+    removerOutroLancamento,
+    adicionarBrindeLancamento,
+    removerBrindeLancamento,
+    totalOutrosLancamentos,
+    totalBrindesLancamentos,
     adicionarSaidaRetirada,
     removerSaidaRetirada,
     atualizarSaidaRetirada,

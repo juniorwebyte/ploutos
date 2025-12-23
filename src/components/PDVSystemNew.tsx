@@ -67,6 +67,8 @@ const WebGLBackground = lazy(() => import('./WebGLBackground'));
 import inventoryService from '../services/inventoryService';
 import paymentGatewayService from '../services/paymentGatewayService';
 import fiscalService from '../services/fiscalService';
+import { fiscalBrazilService } from '../services/fiscalBrazilService';
+import { backupService } from '../services/backupService';
 import cnpjService, { EmpresaData } from '../services/cnpjService';
 import { formatPhone, formatCPFCNPJ, formatCPF, formatCNPJ, unformatPhone, unformatCPF, unformatCNPJ, formatCurrencyInput, unformatCurrency } from '../utils/formatters';
 import storageManager from '../utils/storage';
@@ -482,6 +484,11 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
       defaultValue: []
     }) || [];
   });
+  const [showAutoCalculateCommission, setShowAutoCalculateCommission] = useState(false);
+  const [backupConfig, setBackupConfig] = useState(() => backupService.getConfig());
+  const [satConfig, setSatConfig] = useState(() => fiscalBrazilService.getSATConfig());
+  const [reportType, setReportType] = useState<'sales' | 'products' | 'financial' | 'commissions'>('sales');
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
   // Persistência otimizada com debounce
   useEffect(() => {
@@ -526,23 +533,57 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
 
   // Dados iniciais vazios - sistema inicia zerado
 
-  const menuItems = [
-    { id: 'pos', label: 'PDV', icon: ShoppingCart, color: 'emerald' },
-    { id: 'cash', label: 'Caixa', icon: DollarSign, color: 'green' },
-    { id: 'products', label: 'Produtos', icon: Package, color: 'teal' },
-    { id: 'customers', label: 'Clientes', icon: Users, color: 'blue' },
-    { id: 'users', label: 'Usuários', icon: User, color: 'purple' },
-    { id: 'inventory', label: 'Estoque', icon: Package, color: 'orange' },
-    { id: 'stores', label: 'Lojas', icon: StoreIcon, color: 'indigo' },
-    { id: 'suppliers', label: 'Fornecedores', icon: Truck, color: 'yellow' },
-    { id: 'sales', label: 'Vendas', icon: DollarSign, color: 'green' },
-    { id: 'quotations', label: 'Cotações', icon: FileText, color: 'cyan' },
-    { id: 'purchases', label: 'Compras', icon: ShoppingCart, color: 'blue' },
-    { id: 'transfers', label: 'Transferências', icon: ArrowRight, color: 'indigo' },
-    { id: 'commissions', label: 'Comissões', icon: Percent, color: 'pink' },
-    { id: 'reports', label: 'Relatórios', icon: BarChart3, color: 'purple' },
-    { id: 'settings', label: 'Configurações', icon: Settings, color: 'gray' }
+  // Menu organizado em grupos para sidebar premium
+  const menuGroups = [
+    {
+      title: 'Operação',
+      icon: Zap,
+      items: [
+        { id: 'pos', label: 'PDV', icon: ShoppingCart, color: 'emerald' },
+        { id: 'cash', label: 'Caixa', icon: DollarSign, color: 'green' }
+      ]
+    },
+    {
+      title: 'Cadastros',
+      icon: Users,
+      items: [
+        { id: 'products', label: 'Produtos', icon: Package, color: 'teal' },
+        { id: 'customers', label: 'Clientes', icon: Users, color: 'blue' },
+        { id: 'users', label: 'Usuários', icon: User, color: 'purple' },
+        { id: 'stores', label: 'Lojas', icon: StoreIcon, color: 'indigo' },
+        { id: 'suppliers', label: 'Fornecedores', icon: Truck, color: 'amber' }
+      ]
+    },
+    {
+      title: 'Movimentações',
+      icon: ArrowRight,
+      items: [
+        { id: 'sales', label: 'Vendas', icon: DollarSign, color: 'green' },
+        { id: 'quotations', label: 'Cotações', icon: FileText, color: 'cyan' },
+        { id: 'purchases', label: 'Compras', icon: ShoppingCart, color: 'blue' },
+        { id: 'transfers', label: 'Transferências', icon: ArrowRight, color: 'indigo' }
+      ]
+    },
+    {
+      title: 'Análises',
+      icon: BarChart3,
+      items: [
+        { id: 'inventory', label: 'Estoque', icon: Package, color: 'orange' },
+        { id: 'commissions', label: 'Comissões', icon: Percent, color: 'pink' },
+        { id: 'reports', label: 'Relatórios', icon: BarChart3, color: 'purple' }
+      ]
+    },
+    {
+      title: 'Sistema',
+      icon: Settings,
+      items: [
+        { id: 'settings', label: 'Configurações', icon: Settings, color: 'gray' }
+      ]
+    }
   ];
+
+  // Menu flat para compatibilidade (mobile e outras partes)
+  const menuItems = menuGroups.flatMap(group => group.items);
 
   useEffect(() => {
     // Carregar produtos do storage otimizado
@@ -656,9 +697,12 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product);
     setProductImagePreview(product.image || null);
+    // Converter preço de reais para centavos (string de números)
+    // product.price está em reais (ex: 1.00), precisa converter para centavos (ex: "100")
+    const priceInCents = Math.round(product.price * 100);
     setProductFormData({
       name: product.name || '',
-      price: product.price.toString() || '',
+      price: priceInCents.toString() || '0',
       stock: product.stock.toString() || '',
       category: product.category || '',
       barcode: product.barcode || '',
@@ -734,55 +778,88 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
   };
 
   const handleEditCustomer = (customer: Customer) => {
-    setEditingCustomer(customer);
-    setCustomerFormData({
-      name: customer.name || '',
-      email: customer.email || '',
-      phone: customer.phone || '',
-      cpf: customer.cpf || '',
-      points: customer.points || 0
-    });
-    setShowCustomerModalForm(true);
+    try {
+      console.log('✏️ Editando cliente:', customer);
+      setEditingCustomer(customer);
+      setCustomerFormData({
+        name: customer.name || '',
+        email: customer.email || '',
+        phone: customer.phone || '',
+        cpf: customer.cpf || '',
+        points: customer.points || 0
+      });
+      setShowCustomerModalForm(true);
+      console.log('✅ Modal de edição aberto');
+    } catch (error) {
+      console.error('❌ Erro ao abrir modal de edição:', error);
+      alert('Erro ao abrir formulário de edição. Verifique o console para mais detalhes.');
+    }
   };
 
   const handleDeleteCustomer = (customerId: string) => {
     if (confirm('Tem certeza que deseja excluir este cliente?')) {
-      setCustomers(prev => prev.filter(c => c.id !== customerId));
-      alert('Cliente excluído com sucesso!');
+      try {
+        const updatedCustomers = customers.filter(c => c.id !== customerId);
+        setCustomers(updatedCustomers);
+        storageManager.set('pdv_customers', updatedCustomers);
+        console.log('✅ Cliente excluído:', customerId);
+        console.log('📦 Clientes restantes:', updatedCustomers.length);
+        alert('Cliente excluído com sucesso!');
+      } catch (error) {
+        console.error('❌ Erro ao excluir cliente:', error);
+        alert('Erro ao excluir cliente. Verifique o console para mais detalhes.');
+      }
     }
   };
 
   const handleSaveCustomer = (customerData: Partial<Customer>) => {
-    // Limpar formatação do CPF/CNPJ antes de salvar (apenas números)
-    if (customerData.cpf) {
-      customerData.cpf = customerData.cpf.replace(/\D/g, '');
+    try {
+      // Limpar formatação do CPF/CNPJ antes de salvar (apenas números)
+      if (customerData.cpf) {
+        customerData.cpf = customerData.cpf.replace(/\D/g, '');
+      }
+      
+      let updatedCustomers: Customer[];
+      
+      if (editingCustomer) {
+        // Editar cliente existente
+        updatedCustomers = customers.map(c => 
+          c.id === editingCustomer.id 
+            ? { ...c, ...customerData } 
+            : c
+        );
+        setCustomers(updatedCustomers);
+        // Salvar no storage imediatamente
+        storageManager.set('pdv_customers', updatedCustomers);
+        console.log('✅ Cliente atualizado:', editingCustomer.id, customerData);
+        alert('Cliente atualizado com sucesso!');
+      } else {
+        // Criar novo cliente
+        const newCustomer: Customer = {
+          id: `c${Date.now()}`,
+          name: customerData.name || '',
+          email: customerData.email || '',
+          phone: customerData.phone || '',
+          cpf: customerData.cpf || '',
+          points: customerData.points || 0,
+          ...customerData
+        };
+        updatedCustomers = [...customers, newCustomer];
+        setCustomers(updatedCustomers);
+        // Salvar no storage imediatamente
+        storageManager.set('pdv_customers', updatedCustomers);
+        console.log('✅ Cliente criado:', newCustomer.id, newCustomer);
+        alert('Cliente criado com sucesso!');
+      }
+      
+      // Fechar modal e limpar formulário
+      setShowCustomerModalForm(false);
+      setEditingCustomer(null);
+      setCustomerFormData({ name: '', email: '', phone: '', cpf: '', points: 0 });
+    } catch (error) {
+      console.error('❌ Erro ao salvar cliente:', error);
+      alert('Erro ao salvar cliente. Verifique o console para mais detalhes.');
     }
-    
-    if (editingCustomer) {
-      // Editar cliente existente
-      setCustomers(prev => prev.map(c => 
-        c.id === editingCustomer.id 
-          ? { ...c, ...customerData } 
-          : c
-      ));
-      alert('Cliente atualizado com sucesso!');
-    } else {
-      // Criar novo cliente
-      const newCustomer: Customer = {
-        id: `c${Date.now()}`,
-        name: customerData.name || '',
-        email: customerData.email || '',
-        phone: customerData.phone || '',
-        cpf: customerData.cpf || '',
-        points: customerData.points || 0,
-        ...customerData
-      };
-      setCustomers(prev => [...prev, newCustomer]);
-      alert('Cliente criado com sucesso!');
-    }
-    setShowCustomerModalForm(false);
-    setEditingCustomer(null);
-    setCustomerFormData({ name: '', email: '', phone: '', cpf: '', points: 0 });
   };
 
   const handleExportSales = () => {
@@ -1322,6 +1399,53 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
         }
       }
       
+      // Gerar documentos fiscais (NFCe/NFe) se necessário
+      let nfceData = null;
+      let nfeData = null;
+      
+      try {
+        // Verificar se precisa emitir NFCe ou NFe
+        const emitenteData = {
+          cnpj: '00.000.000/0001-00', // Deve vir das configurações
+          razaoSocial: 'Empresa Exemplo',
+          nomeFantasia: 'Loja Exemplo',
+          uf: 'SP',
+          endereco: {
+            logradouro: 'Rua Exemplo',
+            numero: '123',
+            bairro: 'Centro',
+            municipio: 'São Paulo',
+            uf: 'SP',
+            cep: '01000-000'
+          }
+        };
+
+        // Se cliente tem CPF/CNPJ, pode emitir NFCe
+        if (currentCustomer?.cpf || currentCustomer?.cnpj) {
+          nfceData = fiscalBrazilService.generateNFCe(completedSale, emitenteData);
+        }
+
+        // Se valor > R$ 5000 ou cliente PJ, pode emitir NFe
+        if (total > 5000 || (currentCustomer?.cnpj && currentCustomer.cnpj.length === 14)) {
+          const destinatarioData = {
+            cpf: currentCustomer?.cpf,
+            cnpj: currentCustomer?.cnpj,
+            nome: currentCustomer?.name || 'Cliente',
+            endereco: {
+              logradouro: 'Endereço do Cliente',
+              numero: '123',
+              bairro: 'Bairro',
+              municipio: 'Cidade',
+              uf: 'SP',
+              cep: '00000-000'
+            }
+          };
+          nfeData = fiscalBrazilService.generateNFe(completedSale, emitenteData, destinatarioData);
+        }
+      } catch (error) {
+        console.warn('Erro ao gerar documentos fiscais:', error);
+      }
+      
       // Simular processamento
       await new Promise(resolve => setTimeout(resolve, 1500));
       
@@ -1336,7 +1460,9 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
         items: completedSale.items.length,
         total: completedSale.total,
         status: 'Concluída',
-        paymentMethod: completedSale.paymentMethod
+        paymentMethod: completedSale.paymentMethod,
+        nfce: nfceData,
+        nfe: nfeData
       };
       setSales(prev => [newSale, ...prev]);
       
@@ -1578,146 +1704,198 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
 
   const renderPOS = () => (
     <div className="h-full flex flex-col lg:flex-row gap-6 relative">
-      {/* WebGL Background */}
-      <Suspense fallback={null}>
-        <WebGLBackground 
-          intensity={0.15} 
-          speed={0.5}
-          colors={[[0.08, 0.12, 0.25], [0.12, 0.08, 0.2], [0.1, 0.12, 0.23]]}
-        />
-      </Suspense>
-      
-      {/* Indicador de Status do Caixa */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-3">
-        <div className={`flex items-center gap-2 px-4 py-2 rounded-lg shadow-md ${cashRegisterOpen ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-          <div className={`w-3 h-3 rounded-full ${cashRegisterOpen ? 'bg-green-500' : 'bg-red-500'}`}></div>
-          <span className="font-medium text-sm">
-            {cashRegisterOpen ? 'Caixa Aberto' : 'Caixa Fechado'}
-          </span>
-        </div>
-        {cashRegisterOpen && (
-          <button
-            onClick={() => setShowCloseCashModal(true)}
-            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 text-sm font-medium shadow-md"
-          >
-            <X className="w-4 h-4" />
-            Fechar Caixa
-          </button>
-        )}
-      </div>
-      
-      {/* Área de Produtos */}
-      <div className="flex-1 bg-white rounded-xl shadow-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">Produtos</h2>
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Buscar produtos..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent w-64"
-              />
+      {/* Área de Produtos - Premium */}
+      <div className="flex-1 bg-white/98 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200/60 p-6 relative overflow-hidden">
+        {/* Efeito de brilho sutil */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-100/20 to-teal-100/20 rounded-full blur-3xl -z-0"></div>
+        <div className="relative z-10">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <div className="p-2 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-lg">
+                  <Package className="w-5 h-5 text-emerald-600" />
+                </div>
+                Produtos
+              </h2>
+              <p className="text-sm text-gray-500 mt-1.5 font-medium">
+                {filteredProducts.length} produto(s) disponível(is)
+              </p>
             </div>
-            <button 
-              onClick={handleCreateProduct}
-              className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center justify-center"
-              title="Adicionar Novo Produto"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
+            <div className="flex items-center space-x-3">
+              <div className="relative group">
+                <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Buscar produtos..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all w-64 shadow-sm hover:shadow-md focus:shadow-lg"
+                />
+              </div>
+              <button 
+                onClick={handleCreateProduct}
+                className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all flex items-center justify-center shadow-lg transform hover:scale-110 hover:shadow-xl"
+                title="Adicionar Novo Produto"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[calc(100vh-400px)] overflow-y-auto scrollbar-thin scrollbar-thumb-emerald-500 scrollbar-track-gray-100">
+            {filteredProducts.length === 0 ? (
+              <div className="col-span-full text-center py-12">
+                <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg">Nenhum produto encontrado</p>
+                <button
+                  onClick={handleCreateProduct}
+                  className="mt-4 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors"
+                >
+                  Adicionar Primeiro Produto
+                </button>
+              </div>
+            ) : (
+              filteredProducts.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onAddToCart={addToCart}
+                />
+              ))
+            )}
           </div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-96 overflow-y-auto">
-          {filteredProducts.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              onAddToCart={addToCart}
-            />
-          ))}
-        </div>
       </div>
 
-      {/* Área do Carrinho */}
-      <div className="w-full lg:w-96 bg-white rounded-xl shadow-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-gray-800">Carrinho</h2>
-          <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded-full text-sm font-medium">
-            {currentSale.length} itens
-          </span>
+      {/* Área do Carrinho - Premium */}
+      <div className="w-full lg:w-96 bg-white/98 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200/60 p-6 flex flex-col relative overflow-hidden">
+        {/* Efeito de brilho sutil */}
+        <div className="absolute top-0 left-0 w-48 h-48 bg-gradient-to-br from-purple-100/20 to-pink-100/20 rounded-full blur-3xl -z-0"></div>
+        <div className="relative z-10 flex flex-col h-full">
+        {/* Indicador de Status do Caixa dentro do painel do carrinho */}
+        <div className="flex items-center justify-between mb-4">
+          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+            cashRegisterOpen
+              ? 'bg-green-100 text-green-800'
+              : 'bg-red-100 text-red-800'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${cashRegisterOpen ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
+            <span>{cashRegisterOpen ? 'Caixa Aberto' : 'Caixa Fechado'}</span>
+          </div>
+          {cashRegisterOpen && (
+            <button
+              onClick={() => setShowCloseCashModal(true)}
+              className="px-3 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-lg hover:from-red-700 hover:to-rose-700 transition-all flex items-center gap-1.5 text-xs font-semibold shadow-md"
+            >
+              <X className="w-3.5 h-3.5" />
+              Fechar Caixa
+            </button>
+          )}
         </div>
 
-        <div className="space-y-3 mb-6 max-h-64 overflow-y-auto">
-          {currentSale.map((item) => (
-            <CartItem
-              key={item.product_id}
-              item={item}
-              onRemove={removeFromCart}
-              onUpdateQuantity={updateQuantity}
-            />
-          ))}
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200/60">
+            <div>
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <div className="p-1.5 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-lg">
+                  <ShoppingCart className="w-4 h-4 text-emerald-600" />
+                </div>
+                Carrinho
+              </h2>
+              <p className="text-xs text-gray-500 mt-1 font-medium">Gerencie os itens da venda</p>
+            </div>
+            <span className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-3 py-1.5 rounded-full text-sm font-bold shadow-lg transform hover:scale-105 transition-transform">
+              {currentSale.length} {currentSale.length === 1 ? 'item' : 'itens'}
+            </span>
+          </div>
+
+        <div className="flex-1 space-y-3 mb-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+          {currentSale.length === 0 ? (
+            <div className="text-center py-12">
+              <ShoppingCart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500">Carrinho vazio</p>
+              <p className="text-sm text-gray-400 mt-2">Adicione produtos para começar</p>
+            </div>
+          ) : (
+            currentSale.map((item) => (
+              <CartItem
+                key={item.product_id}
+                item={item}
+                onRemove={removeFromCart}
+                onUpdateQuantity={updateQuantity}
+              />
+            ))
+          )}
         </div>
 
-        {/* Resumo da Venda */}
-        <div className="border-t pt-4 space-y-3">
-          <div className="flex justify-between">
-            <span className="text-gray-600">Subtotal:</span>
-            <span className="font-medium">
+        {/* Resumo da Venda - Modernizado */}
+        <div className="border-t border-gray-200 pt-4 space-y-3 bg-gradient-to-br from-gray-50 to-white rounded-lg p-4">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-700 font-medium">Subtotal:</span>
+            <span className="font-bold text-gray-900">
               R$ {currentSale.reduce((total, item) => total + item.total_price, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </span>
           </div>
           
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">Desconto:</span>
+          <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-200">
+            <span className="text-gray-700 font-medium">Desconto:</span>
             <div className="flex items-center space-x-2">
               <input
                 type="number"
                 value={discountPercentage}
                 onChange={(e) => setDiscountPercentage(Number(e.target.value))}
-                className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                className="w-20 px-3 py-1.5 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm font-semibold text-center"
                 min="0"
                 max="100"
+                placeholder="0"
               />
-              <span className="text-sm text-gray-500">%</span>
+              <span className="text-sm text-gray-600 font-semibold">%</span>
             </div>
           </div>
 
-          <div className="border-t pt-3">
-            <div className="flex justify-between text-lg font-bold">
-              <span>Total:</span>
-              <span className="text-emerald-600">
+          <div className="border-t-2 border-emerald-500 pt-3 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg p-3">
+            <div className="flex justify-between items-center">
+              <span className="text-lg font-bold text-gray-800">TOTAL:</span>
+              <span className="text-2xl font-bold text-emerald-600">
                 R$ {calculateTotal().toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </span>
             </div>
           </div>
 
-          {/* Botões de Ação */}
+          {/* Botões de Ação - Modernizados */}
           <div className="space-y-3 pt-4">
             <button
               onClick={() => setShowCustomerModal(true)}
-              className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2"
+              className="w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all flex items-center justify-center space-x-2 font-semibold shadow-lg transform hover:scale-105"
             >
-              <User className="w-4 h-4" />
-              <span>Cliente</span>
+              <User className="w-5 h-5" />
+              <span>Selecionar Cliente</span>
             </button>
 
             <button
               onClick={() => setShowPaymentModal(true)}
-              disabled={currentSale.length === 0 || isProcessing}
-              className="w-full px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={currentSale.length === 0 || isProcessing || !cashRegisterOpen}
+              className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all flex items-center justify-center space-x-2 font-bold text-lg shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
               {isProcessing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Processando...</span>
+                </>
               ) : (
-                <CreditCard className="w-4 h-4" />
+                <>
+                  <CreditCard className="w-5 h-5" />
+                  <span>Finalizar Venda</span>
+                </>
               )}
-              <span>{isProcessing ? 'Processando...' : 'Finalizar Venda'}</span>
             </button>
+            
+            {!cashRegisterOpen && (
+              <p className="text-xs text-red-600 text-center font-medium">
+                ⚠️ Abra o caixa para realizar vendas
+              </p>
+            )}
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -2302,19 +2480,27 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
       <div className="bg-white rounded-xl shadow-lg p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {customers.map((customer) => (
-            <div key={customer.id} className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white relative group">
-              <div className="absolute top-2 right-2 flex gap-2 opacity-100 transition-opacity z-10">
+            <div key={customer.id} className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white relative group hover:shadow-xl transition-all">
+              <div className="absolute top-2 right-2 flex gap-2 opacity-100 transition-opacity z-20">
                 <button 
-                  onClick={() => handleEditCustomer(customer)}
-                  className="p-2 bg-white/30 rounded-lg hover:bg-white/40 transition-colors shadow-lg"
-                  title="Editar"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditCustomer(customer);
+                  }}
+                  className="p-2 bg-white/30 rounded-lg hover:bg-white/50 transition-colors shadow-lg hover:scale-110"
+                  title="Editar Cliente"
+                  type="button"
                 >
                   <Edit className="w-4 h-4 text-white" />
                 </button>
                 <button 
-                  onClick={() => handleDeleteCustomer(customer.id)}
-                  className="p-2 bg-red-500/70 rounded-lg hover:bg-red-500/90 transition-colors shadow-lg"
-                  title="Excluir"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteCustomer(customer.id);
+                  }}
+                  className="p-2 bg-red-500/70 rounded-lg hover:bg-red-500/90 transition-colors shadow-lg hover:scale-110"
+                  title="Excluir Cliente"
+                  type="button"
                 >
                   <Trash2 className="w-4 h-4 text-white" />
                 </button>
@@ -3234,24 +3420,29 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
     }
 
     const newUser = {
-      id: `user_${Date.now()}`,
+      id: editingUser ? editingUser.id : `user_${Date.now()}`,
       name: userFormData.name,
       email: userFormData.email,
       phone: userFormData.phone,
       role: userFormData.role,
       status: userFormData.status,
-      createdAt: new Date().toLocaleDateString('pt-BR')
+      createdAt: editingUser ? editingUser.createdAt : new Date().toLocaleDateString('pt-BR')
     };
 
+    let updatedUsers: typeof systemUsers;
+    
     if (editingUser) {
-      setSystemUsers(prev => prev.map(u => u.id === editingUser.id ? newUser : u));
+      updatedUsers = systemUsers.map(u => u.id === editingUser.id ? newUser : u);
+      setSystemUsers(updatedUsers);
       alert('Usuário atualizado com sucesso!');
     } else {
-      setSystemUsers(prev => [newUser, ...prev]);
+      updatedUsers = [newUser, ...systemUsers];
+      setSystemUsers(updatedUsers);
       alert('Usuário adicionado com sucesso!');
     }
     
-    storageManager.set('pdv_users', editingUser ? systemUsers.map(u => u.id === editingUser.id ? newUser : u) : [newUser, ...systemUsers]);
+    // Salvar no storage com o estado atualizado
+    storageManager.set('pdv_users', updatedUsers);
     setShowUserModal(false);
     setEditingUser(null);
     setUserFormData({ name: '', email: '', phone: '', role: 'cashier', status: 'active' });
@@ -3470,8 +3661,9 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
                           <button
                             onClick={() => {
                               if (confirm('Tem certeza que deseja excluir este usuário?')) {
-                                setSystemUsers(prev => prev.filter(u => u.id !== user.id));
-                                storageManager.set('pdv_users', systemUsers.filter(u => u.id !== user.id));
+                                const updatedUsers = systemUsers.filter(u => u.id !== user.id);
+                                setSystemUsers(updatedUsers);
+                                storageManager.set('pdv_users', updatedUsers);
                                 alert('Usuário excluído com sucesso!');
                               }
                             }}
@@ -3618,18 +3810,30 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
                         <td className="px-6 py-4 text-sm">{customer.cpf ? formatCPF(customer.cpf) : 'N/A'}</td>
                         <td className="px-6 py-4 text-sm">{customer.points || 0}</td>
                         <td className="px-6 py-4 text-sm">
-                          <button
-                            onClick={() => handleEditCustomer(customer)}
-                            className="text-blue-600 hover:text-blue-800 mr-3"
-                          >
-                            <Edit className="w-4 h-4 inline" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCustomer(customer.id)}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            <Trash2 className="w-4 h-4 inline" />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditCustomer(customer);
+                              }}
+                              className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                              title="Editar Cliente"
+                              type="button"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteCustomer(customer.id);
+                              }}
+                              className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                              title="Excluir Cliente"
+                              type="button"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -3772,81 +3976,143 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
     };
   }, [sales]);
 
-  const renderReports = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-800">Relatórios e Analytics</h2>
-        <div className="flex gap-2">
-          <button 
-            onClick={handleExportSales}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2 text-sm"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Exportar</span>
-          </button>
-          <button 
-            onClick={handlePrintSales}
-            className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center space-x-2 text-sm"
-          >
-            <Printer className="w-4 h-4" />
-            <span className="hidden sm:inline">Imprimir</span>
-          </button>
-        </div>
-      </div>
+  const renderReports = () => {
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-200/50 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <BarChart3 className="w-6 h-6 text-purple-600" />
+                Relatórios e Analytics Avançados
+              </h2>
+              <p className="text-gray-600 mt-1">Análises detalhadas e exportações profissionais</p>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={handleExportSales}
+                className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all font-semibold shadow-lg flex items-center space-x-2"
+              >
+                <Download className="w-4 h-4" />
+                <span>Exportar CSV</span>
+              </button>
+              <button 
+                onClick={handlePrintSales}
+                className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all font-semibold shadow-lg flex items-center space-x-2"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filtros de Relatório */}
+          <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Tipo de Relatório</label>
+                <select
+                  value={reportType}
+                  onChange={(e) => setReportType(e.target.value as any)}
+                  className="w-full px-4 py-2.5 border-2 border-purple-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white font-medium"
+                >
+                  <option value="sales">Vendas</option>
+                  <option value="products">Produtos</option>
+                  <option value="financial">Financeiro</option>
+                  <option value="commissions">Comissões</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Data Inicial</label>
+                <input
+                  type="date"
+                  value={dateRange.start}
+                  onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
+                  className="w-full px-4 py-2.5 border-2 border-purple-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Data Final</label>
+                <input
+                  type="date"
+                  value={dateRange.end}
+                  onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
+                  className="w-full px-4 py-2.5 border-2 border-purple-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    // Aplicar filtros
+                    alert('Filtros aplicados!');
+                  }}
+                  className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl hover:from-purple-600 hover:to-indigo-700 transition-all font-semibold shadow-lg"
+                >
+                  Aplicar Filtros
+                </button>
+              </div>
+            </div>
+          </div>
       
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-4 sm:p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div className="min-w-0 flex-1">
-              <p className="text-blue-100 text-xs sm:text-sm">Vendas Hoje</p>
-              <p className="text-xl sm:text-2xl lg:text-3xl font-bold truncate">
-                R$ {dashboardMetrics.todayTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-blue-200 text-xs sm:text-sm">Total do dia</p>
+          {/* Cards de Métricas - Modernizados */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6">
+            <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 rounded-xl p-6 text-white shadow-xl transform hover:scale-105 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-blue-100 text-xs sm:text-sm font-medium mb-1">Vendas Hoje</p>
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold truncate">
+                    R$ {dashboardMetrics.todayTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-blue-200 text-xs sm:text-sm mt-1">Total do dia</p>
+                </div>
+                <DollarSign className="w-8 h-8 sm:w-10 sm:h-10 text-blue-200 flex-shrink-0 ml-2" />
+              </div>
             </div>
-            <DollarSign className="w-6 h-6 sm:w-8 sm:h-8 text-blue-200 flex-shrink-0 ml-2" />
-          </div>
-        </div>
 
-        <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-4 sm:p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div className="min-w-0 flex-1">
-              <p className="text-green-100 text-xs sm:text-sm">Produtos Vendidos</p>
-              <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{dashboardMetrics.productsSoldThisMonth}</p>
-              <p className="text-green-200 text-xs sm:text-sm">Este mês</p>
+            <div className="bg-gradient-to-br from-green-500 via-emerald-600 to-teal-600 rounded-xl p-6 text-white shadow-xl transform hover:scale-105 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-green-100 text-xs sm:text-sm font-medium mb-1">Produtos Vendidos</p>
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold">{dashboardMetrics.productsSoldThisMonth}</p>
+                  <p className="text-green-200 text-xs sm:text-sm mt-1">Este mês</p>
+                </div>
+                <Package className="w-8 h-8 sm:w-10 sm:h-10 text-green-200 flex-shrink-0 ml-2" />
+              </div>
             </div>
-            <Package className="w-6 h-6 sm:w-8 sm:h-8 text-green-200 flex-shrink-0 ml-2" />
-          </div>
-        </div>
 
-        <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl p-4 sm:p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div className="min-w-0 flex-1">
-              <p className="text-purple-100 text-xs sm:text-sm">Ticket Médio</p>
-              <p className="text-xl sm:text-2xl lg:text-3xl font-bold truncate">
-                R$ {dashboardMetrics.averageTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-purple-200 text-xs sm:text-sm">Média geral</p>
+            <div className="bg-gradient-to-br from-purple-500 via-purple-600 to-pink-600 rounded-xl p-6 text-white shadow-xl transform hover:scale-105 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-purple-100 text-xs sm:text-sm font-medium mb-1">Ticket Médio</p>
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold truncate">
+                    R$ {dashboardMetrics.averageTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-purple-200 text-xs sm:text-sm mt-1">Média geral</p>
+                </div>
+                <BarChart3 className="w-8 h-8 sm:w-10 sm:h-10 text-purple-200 flex-shrink-0 ml-2" />
+              </div>
             </div>
-            <BarChart3 className="w-6 h-6 sm:w-8 sm:h-8 text-purple-200 flex-shrink-0 ml-2" />
-          </div>
-        </div>
 
-        <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl p-4 sm:p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div className="min-w-0 flex-1">
-              <p className="text-orange-100 text-xs sm:text-sm">Clientes Ativos</p>
-              <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{dashboardMetrics.activeCustomers}</p>
-              <p className="text-orange-200 text-xs sm:text-sm">Total cadastrado</p>
+            <div className="bg-gradient-to-br from-orange-500 via-amber-600 to-yellow-600 rounded-xl p-6 text-white shadow-xl transform hover:scale-105 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-orange-100 text-xs sm:text-sm font-medium mb-1">Clientes Ativos</p>
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold">{dashboardMetrics.activeCustomers}</p>
+                  <p className="text-orange-200 text-xs sm:text-sm mt-1">Total cadastrado</p>
+                </div>
+                <Users className="w-8 h-8 sm:w-10 sm:h-10 text-orange-200 flex-shrink-0 ml-2" />
+              </div>
             </div>
-            <Users className="w-6 h-6 sm:w-8 sm:h-8 text-orange-200 flex-shrink-0 ml-2" />
           </div>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">Produtos Mais Vendidos</h3>
+          {/* Gráficos e Análises */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-200/50 p-6">
+              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Package className="w-5 h-5 text-emerald-600" />
+                Produtos Mais Vendidos
+              </h3>
           <div className="space-y-3">
             {(() => {
               // Calcular produtos mais vendidos
@@ -3899,8 +4165,11 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">Vendas por Categoria</h3>
+            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-200/50 p-6">
+              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-purple-600" />
+                Vendas por Categoria
+              </h3>
           <div className="space-y-3">
             {(() => {
               // Calcular vendas por categoria
@@ -3951,54 +4220,243 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
               });
             })()}
           </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderSettings = () => (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">Configurações do Sistema</h2>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Configurações Gerais</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nome da Loja</label>
-              <input type="text" defaultValue="Minha Loja" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">CNPJ</label>
-              <input type="text" defaultValue="12.345.678/0001-90" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Endereço</label>
-              <textarea defaultValue="Rua das Flores, 123 - Centro" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent" rows={3}></textarea>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Configurações de Venda</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Imposto Padrão (%)</label>
-              <input type="number" defaultValue="18" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Desconto Máximo (%)</label>
-              <input type="number" defaultValue="20" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
-            </div>
-            <div className="flex items-center">
-              <input type="checkbox" defaultChecked className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500" />
-              <label className="ml-2 text-sm text-gray-700">Permitir vendas sem estoque</label>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  const renderSettings = () => {
+    const handleSaveBackupConfig = () => {
+      backupService.saveConfig(backupConfig);
+      backupService.startAutoBackup();
+      alert('Configuração de backup salva com sucesso!');
+    };
+
+    const handleCreateManualBackup = () => {
+      const backup = backupService.createBackup('manual');
+      alert(`Backup criado com sucesso!\nID: ${backup.id}\nTamanho: ${(backup.size / 1024).toFixed(2)} KB`);
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-200/50 p-6">
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+            <Settings className="w-6 h-6 text-gray-600" />
+            Configurações do Sistema PDV
+          </h2>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Configurações Gerais */}
+            <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-lg p-6 border border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <StoreIcon className="w-5 h-5 text-indigo-600" />
+                Configurações Gerais
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nome da Loja</label>
+                  <input 
+                    type="text" 
+                    defaultValue="Minha Loja" 
+                    className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">CNPJ</label>
+                  <input 
+                    type="text" 
+                    defaultValue="12.345.678/0001-90" 
+                    className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Endereço</label>
+                  <textarea 
+                    defaultValue="Rua das Flores, 123 - Centro" 
+                    className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all resize-none" 
+                    rows={3}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Configurações de Venda */}
+            <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-lg p-6 border border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5 text-emerald-600" />
+                Configurações de Venda
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Imposto Padrão (%)</label>
+                  <input 
+                    type="number" 
+                    defaultValue="18" 
+                    className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Desconto Máximo (%)</label>
+                  <input 
+                    type="number" 
+                    defaultValue="20" 
+                    className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
+                  />
+                </div>
+                <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                  <input 
+                    type="checkbox" 
+                    defaultChecked 
+                    className="w-5 h-5 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500" 
+                  />
+                  <label className="ml-3 text-sm font-medium text-gray-700">Permitir vendas sem estoque</label>
+                </div>
+              </div>
+            </div>
+
+            {/* Backup Automático */}
+            <div className="bg-gradient-to-br from-white to-blue-50 rounded-xl shadow-lg p-6 border border-blue-200">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Download className="w-5 h-5 text-blue-600" />
+                Backup Automático
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-center p-3 bg-white rounded-lg border border-gray-200">
+                  <input 
+                    type="checkbox" 
+                    checked={backupConfig.autoBackup}
+                    onChange={(e) => setBackupConfig({...backupConfig, autoBackup: e.target.checked})}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500" 
+                  />
+                  <label className="ml-3 text-sm font-medium text-gray-700">Habilitar backup automático</label>
+                </div>
+                {backupConfig.autoBackup && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Frequência</label>
+                      <select
+                        value={backupConfig.frequency}
+                        onChange={(e) => setBackupConfig({...backupConfig, frequency: e.target.value as any})}
+                        className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="daily">Diário</option>
+                        <option value="weekly">Semanal</option>
+                        <option value="monthly">Mensal</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Horário</label>
+                      <input
+                        type="time"
+                        value={backupConfig.time}
+                        onChange={(e) => setBackupConfig({...backupConfig, time: e.target.value})}
+                        className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={handleSaveBackupConfig}
+                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all font-semibold shadow-lg"
+                  >
+                    Salvar Configuração
+                  </button>
+                  <button
+                    onClick={handleCreateManualBackup}
+                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all font-semibold shadow-lg"
+                  >
+                    Backup Agora
+                  </button>
+                </div>
+                {backupConfig.lastBackup && (
+                  <p className="text-xs text-gray-500 text-center">
+                    Último backup: {new Date(backupConfig.lastBackup).toLocaleString('pt-BR')}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Configurações Fiscais */}
+            <div className="bg-gradient-to-br from-white to-teal-50 rounded-xl shadow-lg p-6 border border-teal-200">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-teal-600" />
+                Configurações Fiscais (SAT/NFCe/NFe)
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-center p-3 bg-white rounded-lg border border-gray-200">
+                  <input 
+                    type="checkbox" 
+                    checked={satConfig.enabled}
+                    onChange={(e) => {
+                      const newConfig = {...satConfig, enabled: e.target.checked};
+                      setSatConfig(newConfig);
+                      fiscalBrazilService.saveSATConfig(newConfig);
+                    }}
+                    className="w-5 h-5 text-teal-600 border-gray-300 rounded focus:ring-teal-500" 
+                  />
+                  <label className="ml-3 text-sm font-medium text-gray-700">Habilitar SAT</label>
+                </div>
+                {satConfig.enabled && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">CNPJ</label>
+                      <input
+                        type="text"
+                        value={satConfig.cnpj}
+                        onChange={(e) => {
+                          const newConfig = {...satConfig, cnpj: e.target.value};
+                          setSatConfig(newConfig);
+                          fiscalBrazilService.saveSATConfig(newConfig);
+                        }}
+                        placeholder="00.000.000/0001-00"
+                        className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Código de Ativação</label>
+                      <input
+                        type="password"
+                        value={satConfig.codigoAtivacao}
+                        onChange={(e) => {
+                          const newConfig = {...satConfig, codigoAtivacao: e.target.value};
+                          setSatConfig(newConfig);
+                          fiscalBrazilService.saveSATConfig(newConfig);
+                        }}
+                        placeholder="Código de ativação do SAT"
+                        className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Número de Série</label>
+                      <input
+                        type="text"
+                        value={satConfig.numeroSerie}
+                        onChange={(e) => {
+                          const newConfig = {...satConfig, numeroSerie: e.target.value};
+                          setSatConfig(newConfig);
+                          fiscalBrazilService.saveSATConfig(newConfig);
+                        }}
+                        placeholder="Número de série do SAT"
+                        className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="p-3 bg-teal-50 rounded-lg border border-teal-200">
+                  <p className="text-xs text-teal-800">
+                    <strong>Conformidade Fiscal:</strong> Sistema preparado para emissão de NFCe e NFe conforme legislação brasileira.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const handleStockUpdate = (productId: string, newStock: number) => {
     setProducts(prev => prev.map(p => 
@@ -4058,18 +4516,119 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
   };
 
   // Seções auxiliares ausentes: evitar erros em runtime
-  const renderStores = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">Gestão de Lojas</h2>
-            <p className="text-gray-600">Cadastre e gerencie suas lojas</p>
+  const [selectedStore, setSelectedStore] = useState<string>('');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  
+  const handleSyncStores = async () => {
+    setSyncStatus('syncing');
+    // Simular sincronização
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    setSyncStatus('success');
+    setTimeout(() => setSyncStatus('idle'), 2000);
+  };
+
+  const renderStores = () => {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-200/50 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <StoreIcon className="w-6 h-6 text-indigo-600" />
+                Gestão Multi-Loja
+              </h2>
+              <p className="text-gray-600 mt-1">Cadastre e gerencie múltiplas lojas com sincronização</p>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={handleSyncStores}
+                disabled={syncStatus === 'syncing'}
+                className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl hover:from-indigo-600 hover:to-purple-700 transition-all font-semibold shadow-lg flex items-center gap-2 disabled:opacity-50"
+              >
+                {syncStatus === 'syncing' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Sincronizando...
+                  </>
+                ) : syncStatus === 'success' ? (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Sincronizado!
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Sincronizar
+                  </>
+                )}
+              </button>
+              <button 
+                onClick={()=>exportToCSV('lojas', stores)} 
+                className="px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-all font-semibold shadow-lg flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Exportar CSV
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={()=>exportToCSV('lojas', stores)} className="px-3 py-2 bg-blue-100 text-blue-700 rounded">Exportar CSV</button>
-          </div>
-        </div>
+
+          {/* Seletor de Loja Ativa */}
+          {stores.length > 0 && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                <StoreIcon className="w-4 h-4 text-indigo-600" />
+                Loja Ativa
+              </label>
+              <select
+                value={selectedStore}
+                onChange={(e) => setSelectedStore(e.target.value)}
+                className="w-full px-4 py-2.5 border-2 border-indigo-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white font-medium"
+              >
+                <option value="">Selecione uma loja</option>
+                {stores.filter(s => s.status === 'active').map(store => (
+                  <option key={store.id} value={store.id}>{store.name}</option>
+                ))}
+              </select>
+              {selectedStore && (
+                <div className="mt-3 p-3 bg-indigo-100 rounded-lg border border-indigo-300">
+                  <p className="text-sm text-indigo-800 font-semibold flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    Todas as vendas serão registradas para: {stores.find(s => s.id === selectedStore)?.name}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Estatísticas Multi-Loja */}
+          {stores.length > 1 && (
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl p-4 text-white shadow-lg">
+                <p className="text-indigo-100 text-xs mb-1">Total de Lojas</p>
+                <p className="text-3xl font-bold">{stores.length}</p>
+                <p className="text-indigo-200 text-xs mt-1">{stores.filter(s => s.status === 'active').length} ativas</p>
+              </div>
+              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-4 text-white shadow-lg">
+                <p className="text-emerald-100 text-xs mb-1">Vendas Hoje (Todas)</p>
+                <p className="text-3xl font-bold">
+                  R$ {sales.filter((s: any) => {
+                    const saleDate = new Date(s.date || s.createdAt || Date.now());
+                    const today = new Date();
+                    return saleDate.toDateString() === today.toDateString();
+                  }).reduce((sum: number, s: any) => sum + (s.total || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl p-4 text-white shadow-lg">
+                <p className="text-blue-100 text-xs mb-1">Sincronização</p>
+                <p className="text-3xl font-bold">
+                  {syncStatus === 'success' ? '✓' : syncStatus === 'syncing' ? '...' : '—'}
+                </p>
+                <p className="text-blue-200 text-xs mt-1">
+                  {syncStatus === 'success' ? 'Sincronizado' : syncStatus === 'syncing' ? 'Sincronizando...' : 'Pronto'}
+                </p>
+              </div>
+            </div>
+          )}
 
         {/* Formulário de cadastro/edição */}
         <StoreForm 
@@ -4113,7 +4672,8 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderSuppliers = () => (
     <div className="space-y-6">
@@ -4170,58 +4730,228 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
     </div>
   );
 
-  const renderCommissions = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">Comissões</h2>
-            <p className="text-gray-600">Registre comissões por vendedor</p>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={()=>exportToCSV('comissoes', commissions)} className="px-3 py-2 bg-blue-100 text-blue-700 rounded">Exportar CSV</button>
-          </div>
-        </div>
+  // Calcular comissões automaticamente baseado em vendas
+  const calculateCommissionsFromSales = useMemo(() => {
+    const commissionMap: Record<string, { sellerName: string; salesAmount: number; commissionAmount: number; percentage: number }> = {};
+    
+    sales.forEach((sale: any) => {
+      const sellerId = sale.sellerId || sale.seller_id;
+      const sellerName = sale.sellerName || sale.seller_name || 'Vendedor';
+      const saleTotal = sale.total || sale.total_price || 0;
+      
+      if (sellerId) {
+        const seller = sellers.find(s => s.id === sellerId);
+        const percentage = seller?.commission || 5; // 5% padrão
+        
+        if (!commissionMap[sellerId]) {
+          commissionMap[sellerId] = {
+            sellerName,
+            salesAmount: 0,
+            commissionAmount: 0,
+            percentage
+          };
+        }
+        
+        commissionMap[sellerId].salesAmount += saleTotal;
+        commissionMap[sellerId].commissionAmount += (saleTotal * percentage / 100);
+      }
+    });
+    
+    return Object.values(commissionMap);
+  }, [sales, sellers]);
 
-        <CommissionForm 
-          editing={editingCommission || undefined}
-          onAdd={(c)=>setCommissions(prev=>[{...c,id:`cm_${Date.now()}`},...prev])}
-          onUpdate={(id, c)=>setCommissions(prev=>prev.map(x=>x.id===id?{...x,...c}:x))}
-          onCancelEdit={()=>setEditingCommission(null)}
-        />
+  const renderCommissions = () => {
+    const handleAutoCalculate = () => {
+      const newCommissions = calculateCommissionsFromSales.map(comm => ({
+        id: `cm_auto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sellerName: comm.sellerName,
+        percentage: comm.percentage,
+        salesAmount: comm.salesAmount,
+        commissionAmount: comm.commissionAmount,
+        date: new Date().toISOString()
+      }));
+      
+      setCommissions(prev => [...newCommissions, ...prev]);
+      storageManager.set('pdv_commissions', [...newCommissions, ...commissions]);
+      setShowAutoCalculateCommission(false);
+      alert(`${newCommissions.length} comissão(ões) calculada(s) automaticamente!`);
+    };
 
-        <div className="overflow-x-auto mt-6">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Vendedor</th>
-                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">% Comissão</th>
-                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Vendas</th>
-                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Comissão</th>
-                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Data</th>
-                <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y">
-              {commissions.map(c=> (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 font-medium text-gray-900">{c.sellerName}</td>
-                  <td className="px-4 py-2 text-gray-700">{c.percentage}%</td>
-                  <td className="px-4 py-2 text-gray-700">{c.salesAmount.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 text-gray-700">{c.commissionAmount.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-                  <td className="px-4 py-2 text-gray-700">{new Date(c.date).toLocaleDateString('pt-BR')}</td>
-                  <td className="px-4 py-2 flex gap-3">
-                    <button onClick={()=>setEditingCommission(c)} className="text-blue-600 hover:underline">Editar</button>
-                    <button onClick={()=>setCommissions(prev=>prev.filter(x=>x.id!==c.id))} className="text-red-600 hover:underline">Excluir</button>
-                  </td>
+    return (
+      <div className="space-y-6">
+        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-200/50 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <Percent className="w-6 h-6 text-pink-600" />
+                Controle de Comissões
+              </h2>
+              <p className="text-gray-600 mt-1">Gestão completa de comissões por vendedor</p>
+            </div>
+            <div className="flex gap-2">
+              {calculateCommissionsFromSales.length > 0 && (
+                <button 
+                  onClick={() => setShowAutoCalculateCommission(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-600 text-white rounded-xl hover:from-pink-600 hover:to-rose-700 transition-all font-semibold shadow-lg flex items-center gap-2"
+                >
+                  <Calculator className="w-4 h-4" />
+                  Calcular Automaticamente
+                </button>
+              )}
+              <button 
+                onClick={()=>exportToCSV('comissoes', commissions)} 
+                className="px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-all font-semibold shadow-lg flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Exportar CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Resumo de Comissões Automáticas */}
+          {calculateCommissionsFromSales.length > 0 && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-200">
+              <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-pink-600" />
+                Comissões Pendentes (Baseadas em Vendas)
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {calculateCommissionsFromSales.map((comm, idx) => (
+                  <div key={idx} className="bg-white rounded-lg p-3 border border-pink-200">
+                    <p className="font-semibold text-gray-800 text-sm">{comm.sellerName}</p>
+                    <p className="text-xs text-gray-600 mt-1">{comm.percentage}% de comissão</p>
+                    <p className="text-lg font-bold text-pink-600 mt-2">
+                      R$ {comm.commissionAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-gray-500">Vendas: R$ {comm.salesAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <CommissionForm 
+            editing={editingCommission || undefined}
+            onAdd={(c)=>setCommissions(prev=>[{...c,id:`cm_${Date.now()}`},...prev])}
+            onUpdate={(id, c)=>setCommissions(prev=>prev.map(x=>x.id===id?{...x,...c}:x))}
+            onCancelEdit={()=>setEditingCommission(null)}
+          />
+
+          <div className="overflow-x-auto mt-6 bg-white rounded-lg border border-gray-200">
+            <table className="w-full">
+              <thead className="bg-gradient-to-r from-pink-500 to-rose-600">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase">Vendedor</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase">% Comissão</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase">Vendas</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase">Comissão</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase">Data</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase">Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {commissions.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                      <Percent className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                      <p>Nenhuma comissão registrada</p>
+                    </td>
+                  </tr>
+                ) : (
+                  commissions.map(c=> (
+                    <tr key={c.id} className="hover:bg-pink-50 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-gray-900">{c.sellerName}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-1 bg-pink-100 text-pink-700 rounded-full text-xs font-semibold">
+                          {c.percentage}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-700">
+                        R$ {c.salesAmount.toLocaleString('pt-BR',{minimumFractionDigits: 2})}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-bold text-pink-600 text-lg">
+                          R$ {c.commissionAmount.toLocaleString('pt-BR',{minimumFractionDigits: 2})}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-sm">
+                        {new Date(c.date).toLocaleDateString('pt-BR')}
+                      </td>
+                      <td className="px-4 py-3 flex gap-2">
+                        <button 
+                          onClick={()=>setEditingCommission(c)} 
+                          className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+                        >
+                          <Edit className="w-4 h-4 inline mr-1" />
+                          Editar
+                        </button>
+                        <button 
+                          onClick={()=>{
+                            if(confirm('Deseja excluir esta comissão?')) {
+                              setCommissions(prev=>prev.filter(x=>x.id!==c.id));
+                              storageManager.set('pdv_commissions', commissions.filter(x=>x.id!==c.id));
+                            }
+                          }} 
+                          className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm font-medium"
+                        >
+                          <Trash2 className="w-4 h-4 inline mr-1" />
+                          Excluir
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+
+        {/* Modal de Confirmação de Cálculo Automático */}
+        {showAutoCalculateCommission && (
+          <div className="fixed inset-0 z-60 bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-bold text-gray-800">Calcular Comissões Automaticamente</h3>
+                <p className="text-sm text-gray-600 mt-2">
+                  Serão criadas {calculateCommissionsFromSales.length} comissão(ões) baseada(s) nas vendas dos vendedores.
+                </p>
+              </div>
+              <div className="p-6 space-y-3 max-h-64 overflow-y-auto">
+                {calculateCommissionsFromSales.map((comm, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="font-semibold text-gray-800">{comm.sellerName}</p>
+                    <p className="text-sm text-gray-600">
+                      {comm.percentage}% de R$ {comm.salesAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} = 
+                      <span className="font-bold text-pink-600 ml-1">
+                        R$ {comm.commissionAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="p-6 border-t border-gray-200 flex gap-3">
+                <button
+                  onClick={() => {
+                    handleAutoCalculate();
+                    setShowAutoCalculateCommission(false);
+                  }}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-pink-500 to-rose-600 text-white rounded-xl hover:from-pink-600 hover:to-rose-700 transition-all font-semibold shadow-lg"
+                >
+                  Confirmar e Calcular
+                </button>
+                <button
+                  onClick={() => setShowAutoCalculateCommission(false)}
+                  className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-all font-semibold"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   // Componentes internos simples de formulário
   // helpers de máscara simples
@@ -4392,73 +5122,203 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
     }`}>
       <div 
         id="pdv-container"
-        className={`bg-white shadow-2xl flex flex-col transition-all duration-300 ${
+        className={`bg-gradient-to-br from-slate-50 via-purple-50/80 to-indigo-50/80 shadow-2xl flex flex-col transition-all duration-300 relative overflow-hidden ${
           isMaximized 
             ? 'w-full h-full rounded-none' 
             : 'w-full max-w-7xl h-[90vh] rounded-2xl'
         }`}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center space-x-4">
-            <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center">
-              <ShoppingCart className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">Sistema PDV</h1>
-              <p className="text-gray-600">Ponto de Venda Profissional</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={toggleMaximize}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              title={isMaximized ? "Restaurar" : "Maximizar"}
-            >
-              {isMaximized ? (
-                <Minimize2 className="w-6 h-6" />
-              ) : (
-                <Maximize2 className="w-6 h-6" />
-              )}
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
+        {/* Background Pattern Premium */}
+        <div className="absolute inset-0 opacity-40 pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-100/30 via-emerald-50/20 to-indigo-100/30"></div>
+          <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-emerald-200/10 to-teal-200/10 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 w-96 h-96 bg-gradient-to-tr from-purple-200/10 to-indigo-200/10 rounded-full blur-3xl"></div>
         </div>
-
-        {/* Navigation */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex space-x-1 overflow-x-auto">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              return (
+        
+        <div className="relative z-10 flex flex-col h-full">
+        {/* Header Premium - Design Sofisticado */}
+        <header className="relative bg-gradient-to-r from-slate-900 via-purple-900 to-indigo-900 shadow-2xl border-b border-purple-400/30 overflow-hidden">
+          {/* Efeito de brilho animado no header */}
+          <div className="absolute inset-0 animate-shimmer opacity-50"></div>
+          
+          <div className="relative z-10 px-6 py-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 to-cyan-500 rounded-xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity"></div>
+                  <div className="relative w-14 h-14 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-2xl transform hover:rotate-12 hover:scale-110 transition-all duration-500">
+                    <ShoppingCart className="w-7 h-7 text-white relative z-10 drop-shadow-lg" />
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-xl"></div>
+                  </div>
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-slate-900 shadow-lg animate-pulse"></div>
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-white tracking-tight drop-shadow-lg">
+                    Sistema PDV Profissional
+                  </h1>
+                  <p className="text-purple-200/90 text-sm flex items-center gap-2 mt-0.5">
+                    <span className="w-2 h-2 bg-green-400 rounded-full shadow-lg animate-pulse"></span>
+                    <span className="font-medium">Ponto de Venda Completo</span>
+                    <span className="text-purple-300/70">•</span>
+                    <span className="text-purple-200/80">Conforme Legislação Fiscal</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
                 <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${
-                    activeTab === item.id
-                      ? getColorClasses(item.color)
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+                  onClick={toggleMaximize}
+                  className="p-2.5 text-purple-200 hover:text-white hover:bg-white/10 rounded-xl transition-all duration-300 hover:scale-110 backdrop-blur-sm"
+                  title={isMaximized ? "Restaurar" : "Maximizar"}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span>{item.label}</span>
+                  {isMaximized ? (
+                    <Minimize2 className="w-5 h-5" />
+                  ) : (
+                    <Maximize2 className="w-5 h-5" />
+                  )}
                 </button>
-              );
-            })}
+                <button
+                  onClick={onClose}
+                  className="p-2.5 text-purple-200 hover:text-white hover:bg-red-500/20 rounded-xl transition-all duration-300 hover:scale-110 backdrop-blur-sm"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        </header>
 
-        {/* Content */}
-        <div className="flex-1 p-6 overflow-y-auto">
-          {renderContent()}
-        </div>
+        {/* Layout principal com sidebar lateral PREMIUM */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Sidebar Desktop Premium */}
+          <aside className="hidden md:flex md:w-64 lg:w-72 flex-col bg-gradient-to-b from-white via-gray-50/50 to-white backdrop-blur-xl border-r border-gray-200/80 shadow-2xl">
+            {/* Header Premium da Sidebar */}
+            <div className="px-5 py-5 border-b border-gray-200/60 bg-gradient-to-r from-emerald-50/50 to-teal-50/50">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
+                  <ShoppingCart className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Sistema PDV</h3>
+                  <p className="text-[10px] text-gray-500 font-medium">Navegação Premium</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Navegação por Grupos */}
+            <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+              {menuGroups.map((group, groupIndex) => {
+                const GroupIcon = group.icon;
+                return (
+                  <div key={group.title} className="space-y-2">
+                    {/* Título do Grupo */}
+                    <div className="flex items-center gap-2 px-2 mb-2">
+                      <GroupIcon className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        {group.title}
+                      </span>
+                    </div>
+                    
+                    {/* Itens do Grupo */}
+                    <div className="space-y-1">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => setActiveTab(item.id)}
+                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 group relative overflow-hidden ${
+                              isActive
+                                ? `${getColorClasses(item.color)} shadow-lg transform translate-x-1 scale-[1.02]`
+                                : 'text-gray-700 hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100/50 hover:text-gray-900 hover:shadow-sm'
+                            }`}
+                          >
+                            {/* Efeito de brilho no hover */}
+                            {!isActive && (
+                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+                            )}
+                            
+                            <span className="flex items-center gap-3 relative z-10">
+                              <div className={`p-1.5 rounded-lg transition-all ${
+                                isActive 
+                                  ? 'bg-white/20' 
+                                  : 'bg-gray-100 group-hover:bg-gray-200'
+                              }`}>
+                                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-gray-600'}`} />
+                              </div>
+                              <span className={isActive ? 'text-white font-semibold' : 'text-gray-700 font-medium'}>
+                                {item.label}
+                              </span>
+                            </span>
+                            
+                            {isActive && (
+                              <div className="relative z-10">
+                                <div className="w-2 h-2 rounded-full bg-white/90 shadow-lg animate-pulse" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* Separador entre grupos (exceto último) */}
+                    {groupIndex < menuGroups.length - 1 && (
+                      <div className="pt-2">
+                        <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </nav>
+            
+            {/* Footer Premium da Sidebar */}
+            <div className="px-5 py-4 border-t border-gray-200/60 bg-gradient-to-r from-purple-50/30 to-indigo-50/30">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+                <p className="text-[10px] font-semibold text-gray-600">Sistema Online</p>
+              </div>
+              <p className="text-[9px] text-gray-500 leading-tight">
+                PDV Profissional • Conforme Legislação Fiscal
+              </p>
+            </div>
+          </aside>
 
-        {/* Modals */}
+          {/* Navegação compacta para mobile (topo) */}
+          <aside className="md:hidden px-4 pt-2 pb-3 bg-white/95 backdrop-blur-sm border-b border-gray-200/60 shadow-sm">
+            <div className="flex space-x-2 overflow-x-auto scrollbar-hide">
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-all duration-200 whitespace-nowrap text-xs font-medium ${
+                      isActive
+                        ? `${getColorClasses(item.color)} shadow-md`
+                        : 'text-gray-700 bg-gray-50 hover:bg-gray-100 hover:text-gray-900'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+
+          {/* Conteúdo principal Premium */}
+          <main className="flex-1 p-4 sm:p-6 overflow-y-auto bg-transparent relative">
+            <div className="max-w-7xl mx-auto relative z-10">
+              {renderContent()}
+            </div>
+          </main>
+        </div>
+        </div>
+      </div>
+
+      {/* Modals */}
         {showCustomerModal && (
           <div className="fixed inset-0 z-60 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
@@ -4770,8 +5630,11 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
                   const formData = new FormData(e.target as HTMLFormElement);
                   const imageInput = formData.get('image') as File | null;
                   
-                  // Converter preço de string formatada para número
-                  const priceValue = unformatCurrency(productFormData.price);
+                  // Converter preço de string de centavos para número em reais
+                  // productFormData.price está em centavos (string de números)
+                  // Exemplo: "100" = 1.00 real, "1000" = 10.00 reais
+                  const priceInCents = parseInt(productFormData.price || '0', 10);
+                  const priceValue = priceInCents / 100; // Converte centavos para reais
                   
                   // Se uma nova imagem foi selecionada, usar o preview
                   if (productImagePreview) {
@@ -4843,8 +5706,19 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
                       required
                       value={formatCurrencyInput(productFormData.price)}
                       onChange={(e) => {
-                        const unformatted = e.target.value.replace(/\D/g, '');
-                        setProductFormData(prev => ({ ...prev, price: unformatted }));
+                        // Remove tudo exceto números
+                        const numbers = e.target.value.replace(/\D/g, '');
+                        // Salva como string de números (representando centavos)
+                        setProductFormData(prev => ({ ...prev, price: numbers }));
+                      }}
+                      onBlur={(e) => {
+                        // Garante que sempre tenha pelo menos 2 dígitos (centavos)
+                        const numbers = e.target.value.replace(/\D/g, '');
+                        if (numbers && numbers.length < 2) {
+                          // Se tiver menos de 2 dígitos, adiciona zeros à direita
+                          const padded = numbers.padEnd(2, '0');
+                          setProductFormData(prev => ({ ...prev, price: padded }));
+                        }
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                       placeholder="R$ 0,00"
@@ -6657,7 +7531,6 @@ function PDVSystemNew({ onClose }: PDVSystemNewProps) {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

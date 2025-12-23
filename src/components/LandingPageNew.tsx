@@ -56,6 +56,7 @@ import LicenseValidator from './LicenseValidator';
 import plansService, { PlanRecord } from '../services/plansService';
 import LiveChat from './LiveChat';
 import CadernoDemo from './CadernoDemo';
+import TimeClockDemo from './TimeClockDemo';
 import backendService from '../services/backendService';
 
 interface LandingPageNewProps {
@@ -74,6 +75,7 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
   const [showChat, setShowChat] = useState(false);
   const [isChatMinimized, setIsChatMinimized] = useState(false);
   const [showCadernoDemo, setShowCadernoDemo] = useState(false);
+  const [showTimeClockDemo, setShowTimeClockDemo] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
   const [contactFormData, setContactFormData] = useState({ name: '', email: '', message: '' });
   const [isSubmittingContact, setIsSubmittingContact] = useState(false);
@@ -121,6 +123,11 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
 
   const handlePaymentComplete = (paymentData: any) => {
     setShowPaymentModal(false);
+    // Salvar TXID no localStorage para ativação posterior
+    if (paymentData?.cobranca?.txid) {
+      localStorage.setItem('pending_subscription_txid', paymentData.cobranca.txid);
+    }
+    // Redirecionar para login/criação de conta
     onRequestLogin();
   };
 
@@ -422,9 +429,28 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
+              { 
+                icon: Clock, 
+                title: "Controle de Ponto Eletrônico", 
+                desc: "Sistema completo de registro de ponto com múltiplos métodos: manual, geolocalização, QR Code e IP autorizado. Gestão de jornadas, escalas, justificativas e relatórios completos.",
+                demo: 'timeclock',
+                highlight: true
+              },
+              { 
+                icon: FileText, 
+                title: "Caderno de Notas Fiscais", 
+                desc: "Gestão completa de notas fiscais com sistema de parcelas, controle de entrada/saída, datas de fabricação, NFE, vencimento e total. Interface intuitiva e relatórios detalhados.",
+                demo: 'caderno',
+                highlight: true
+              },
+              { 
+                icon: DollarSign, 
+                title: "Movimento de Caixa", 
+                desc: "Controle total de entradas e saídas financeiras. Registre dinheiro, cartões, PIX, boletos, cheques, descontos, retiradas e comissões com validação automática e relatórios profissionais.",
+                highlight: true
+              },
               { icon: Calculator, title: "Gestão de Entradas", desc: "Controle total de dinheiro, cartões, PIX, boletos e cheques" },
               { icon: BarChart3, title: "Controle de Saídas", desc: "Registre descontos, retiradas, vales e comissões" },
-              { icon: FileText, title: "Notas Fiscais", desc: "Caderno completo para controle de entrada e saída" },
               { icon: Users, title: "Comissões", desc: "Sistema automático de cálculo de comissões" },
               { icon: Printer, title: "Relatórios Completos", desc: "Cupons profissionais otimizados" },
               { icon: Shield, title: "Segurança Total", desc: "Backup automático, validações robustas e proteção contra força bruta" },
@@ -443,32 +469,76 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
               { icon: Eye, title: "Acessibilidade", desc: "Interface acessível com suporte completo a leitores de tela" },
               { icon: Settings, title: "Personalização", desc: "Configure cores, logo e preferências do sistema" }
             ].map((feature, index) => (
-              <div key={index} className="group bg-gray-50 p-6 rounded-xl border border-gray-200 hover:border-emerald-300 hover:shadow-xl transition-all duration-300 hover:-translate-y-2 hover:scale-105 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/0 to-teal-50/0 group-hover:from-emerald-50/50 group-hover:to-teal-50/50 rounded-xl transition-all duration-300"></div>
-                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center mb-4 text-white shadow-lg transform group-hover:rotate-12 group-hover:scale-110 transition-all duration-300 relative z-10">
+              <div 
+                key={index} 
+                className={`group bg-gray-50 p-6 rounded-xl border-2 transition-all duration-300 hover:-translate-y-2 hover:scale-105 relative overflow-hidden ${
+                  feature.highlight 
+                    ? 'border-emerald-400 hover:border-emerald-500 hover:shadow-2xl bg-gradient-to-br from-emerald-50/50 to-teal-50/50' 
+                    : 'border-gray-200 hover:border-emerald-300 hover:shadow-xl'
+                }`}
+              >
+                <div className={`absolute inset-0 bg-gradient-to-br rounded-xl transition-all duration-300 ${
+                  feature.highlight
+                    ? 'from-emerald-50/50 to-teal-50/50 group-hover:from-emerald-50/80 group-hover:to-teal-50/80'
+                    : 'from-emerald-50/0 to-teal-50/0 group-hover:from-emerald-50/50 group-hover:to-teal-50/50'
+                }`}></div>
+                <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 text-white shadow-lg transform group-hover:rotate-12 group-hover:scale-110 transition-all duration-300 relative z-10 ${
+                  feature.highlight
+                    ? 'bg-gradient-to-br from-emerald-600 to-teal-700'
+                    : 'bg-gradient-to-br from-emerald-500 to-teal-600'
+                }`}>
                   <feature.icon className="w-6 h-6 group-hover:scale-110 transition-transform" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2 relative z-10 group-hover:text-emerald-600 transition-colors" style={{ fontFamily: 'Poppins, sans-serif' }}>{feature.title}</h3>
-                <p className="text-gray-600 text-sm relative z-10" style={{ fontFamily: 'Inter, sans-serif' }}>{feature.desc}</p>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2 relative z-10 group-hover:text-emerald-600 transition-colors flex items-center gap-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  {feature.title}
+                  {feature.highlight && (
+                    <span className="text-xs bg-emerald-600 text-white px-2 py-0.5 rounded-full">NOVO</span>
+                  )}
+                </h3>
+                <p className="text-gray-600 text-sm relative z-10 mb-3" style={{ fontFamily: 'Inter, sans-serif' }}>{feature.desc}</p>
+                {feature.demo && (
+                  <button
+                    onClick={() => {
+                      if (feature.demo === 'timeclock') {
+                        setShowTimeClockDemo(true);
+                      } else if (feature.demo === 'caderno') {
+                        setShowCadernoDemo(true);
+                      }
+                    }}
+                    className="relative z-10 text-xs font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1 group/btn"
+                  >
+                    <PlayCircle className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
+                    Testar Demo
+                  </button>
+                )}
               </div>
             ))}
           </div>
 
           {/* Demo Section */}
           <div className="text-center mt-16">
-            <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-2xl shadow-blue-500/30 hover:shadow-blue-500/50 transition-all duration-300 transform hover:scale-[1.02] relative overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all duration-300 transform hover:scale-[1.02] relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 opacity-0 hover:opacity-100 transition-opacity duration-500 animate-shimmer"></div>
-              <h3 className="text-2xl font-bold mb-4 relative z-10">Teste o Sistema Gratuitamente</h3>
-              <p className="text-blue-100 mb-6">
-                Experimente o Caderno de Notas com sistema de parcelas por 5 minutos, sem cadastro ou compromisso.
+              <h3 className="text-2xl font-bold mb-4 relative z-10">Teste as Funcionalidades Gratuitamente</h3>
+              <p className="text-emerald-100 mb-6">
+                Experimente o Controle de Ponto Eletrônico e o Caderno de Notas sem cadastro ou compromisso.
               </p>
+              <div className="flex flex-wrap justify-center gap-3 relative z-10">
+                <button
+                  onClick={() => setShowTimeClockDemo(true)}
+                  className="group bg-white text-emerald-600 px-6 py-3 rounded-lg font-semibold hover:bg-emerald-50 transition-all duration-300 flex items-center gap-2 transform hover:scale-110 hover:shadow-xl shadow-lg"
+                >
+                  <Clock className="h-5 w-5 group-hover:scale-110 transition-transform" />
+                  Demo Controle de Ponto
+                </button>
               <button
                 onClick={() => setShowCadernoDemo(true)}
-                className="group bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-all duration-300 flex items-center gap-2 mx-auto transform hover:scale-110 hover:shadow-xl shadow-lg relative z-10"
+                  className="group bg-white text-emerald-600 px-6 py-3 rounded-lg font-semibold hover:bg-emerald-50 transition-all duration-300 flex items-center gap-2 transform hover:scale-110 hover:shadow-xl shadow-lg"
               >
-                <PlayCircle className="h-5 w-5 group-hover:scale-110 transition-transform" />
-                Iniciar Demo Gratuita
+                  <FileText className="h-5 w-5 group-hover:scale-110 transition-transform" />
+                  Demo Caderno de Notas
               </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1038,6 +1108,14 @@ export default function LandingPageNew({ onRequestLogin, onRequestDemo, onOpenAd
       {/* Caderno Demo */}
       {showCadernoDemo && (
         <CadernoDemo onClose={() => setShowCadernoDemo(false)} />
+      )}
+
+      {/* Time Clock Demo */}
+      {showTimeClockDemo && (
+        <TimeClockDemo 
+          onClose={() => setShowTimeClockDemo(false)} 
+          onRequestLogin={onRequestLogin}
+        />
       )}
 
     </div>

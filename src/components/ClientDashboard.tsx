@@ -33,6 +33,7 @@ import CadernoNotas from './CadernoNotas';
 import CashFlowUnlockRequest from './CashFlowUnlockRequest';
 import LicenseKeyInput from './LicenseKeyInput';
 import FinancialTools from './FinancialTools';
+import SubscriptionActivation from './SubscriptionActivation';
 import { CompanyConfig } from '../types';
 import plansService, { PlanRecord } from '../services/plansService';
 
@@ -92,10 +93,18 @@ function ClientDashboard({ onBackToLogin }: ClientDashboardProps) {
   const [limitationType, setLimitationType] = useState<string>('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
+  const [showSubscriptionActivation, setShowSubscriptionActivation] = useState(false);
+
   useEffect(()=>{
     const subs = JSON.parse(localStorage.getItem('demo_subscriptions')||'[]');
     const last = subs[subs.length-1] || null;
     setHasActiveSubscription(!!last);
+    
+    // Verificar se há TXID pendente para ativação
+    const pendingTxid = localStorage.getItem('pending_subscription_txid');
+    if (pendingTxid && !last) {
+      setShowSubscriptionActivation(true);
+    }
   }, []);
 
   // Verificar expiração de licença periodicamente
@@ -1258,6 +1267,27 @@ function ClientDashboard({ onBackToLogin }: ClientDashboardProps) {
             // Recarregar página para atualizar acesso
             window.location.reload();
           }}
+        />
+      )}
+
+      {/* Modal de Ativação de Assinatura */}
+      {showSubscriptionActivation && (
+        <SubscriptionActivation
+          isOpen={showSubscriptionActivation}
+          onClose={() => {
+            setShowSubscriptionActivation(false);
+            localStorage.removeItem('pending_subscription_txid');
+          }}
+          onSuccess={() => {
+            setShowSubscriptionActivation(false);
+            localStorage.removeItem('pending_subscription_txid');
+            // Recarregar assinaturas
+            const subs = JSON.parse(localStorage.getItem('demo_subscriptions')||'[]');
+            const last = subs[subs.length-1] || null;
+            setHasActiveSubscription(!!last);
+            setActiveTab('dashboard');
+          }}
+          txid={localStorage.getItem('pending_subscription_txid') || undefined}
         />
       )}
 

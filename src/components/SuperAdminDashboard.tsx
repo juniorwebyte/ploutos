@@ -60,6 +60,7 @@ const SecurityPerformanceModal = lazy(() => import('./SecurityPerformanceModal')
 const CadernoNotas = lazy(() => import('./CadernoNotas'));
 const SubscriptionManagement = lazy(() => import('./SubscriptionManagement'));
 const FinancialTools = lazy(() => import('./FinancialTools'));
+const TimeClockModule = lazy(() => import('./TimeClockModule'));
 
 import licenseService from '../services/licenseService';
 import { securityService, performanceService } from '../services/securityService';
@@ -224,6 +225,7 @@ function SuperAdminDashboard({ onBackToLogin }: SuperAdminDashboardProps) {
     { id: 'pending-users', label: 'Cadastros Pendentes', icon: UserPlus, color: 'yellow' },
     { id: 'cashflow', label: 'PloutosLedger - Sistema de Gestão Financeira', icon: TrendingUp, color: 'emerald' },
     { id: 'caderno-notas', label: 'Caderno de Notas', icon: FileText, color: 'blue' },
+    { id: 'timeclock', label: 'Controle de Ponto', icon: Clock, color: 'emerald' },
     { id: 'tenants', label: 'Organizações', icon: Building, color: 'purple' },
     { id: 'plans', label: 'Planos', icon: CreditCard, color: 'orange' },
     { id: 'subscriptions', label: 'Assinaturas', icon: DollarSign, color: 'pink' },
@@ -5155,6 +5157,8 @@ function SuperAdminDashboard({ onBackToLogin }: SuperAdminDashboardProps) {
         return renderCMS();
       case 'caderno-notas':
         return renderCadernoNotas();
+      case 'timeclock':
+        return <TimeClockModule />;
       default:
         return renderOverview();
     }
@@ -5172,7 +5176,7 @@ function SuperAdminDashboard({ onBackToLogin }: SuperAdminDashboardProps) {
       />
       
       {/* Header */}
-      <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-gray-100 sticky top-0 z-40">
+      <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-gray-100 sticky top-0 z-40" style={{ position: 'sticky' }}>
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-4">
@@ -5360,6 +5364,7 @@ function SuperAdminDashboard({ onBackToLogin }: SuperAdminDashboardProps) {
                     {activeTab === 'cms' && 'CMS e personalização'}
                     {activeTab === 'cashflow' && 'Sistema de gestão financeira'}
                     {activeTab === 'caderno-notas' && 'Caderno de Notas Fiscais'}
+                    {activeTab === 'timeclock' && 'Controle de Ponto Eletrônico'}
                   </p>
                 </div>
                 <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
@@ -5369,8 +5374,15 @@ function SuperAdminDashboard({ onBackToLogin }: SuperAdminDashboardProps) {
               </div>
             </div>
             
-            <div className={`bg-white/80 backdrop-blur-md rounded-xl sm:rounded-2xl shadow-xl border border-white/20 animate-tab-slide ${activeTab === 'cashflow' ? 'overflow-visible' : 'overflow-hidden'}`}>
-          {renderContent()}
+            <div 
+              className={`bg-white/80 backdrop-blur-md rounded-xl sm:rounded-2xl shadow-xl border border-white/20 animate-tab-slide ${activeTab === 'cashflow' || activeTab === 'timeclock' ? 'overflow-visible' : 'overflow-hidden'}`} 
+              style={activeTab === 'timeclock' ? { 
+                position: 'relative', 
+                zIndex: 50,
+                marginTop: '-20px',
+              } : {}}
+            >
+              {renderContent()}
             </div>
           </div>
         </main>

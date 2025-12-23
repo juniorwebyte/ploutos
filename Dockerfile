@@ -1,8 +1,11 @@
 # ============================================
-# PLOUTOS LEDGER - Dockerfile para Produção
+# PloutosLedger - Dockerfile
 # ============================================
+# Multi-stage build para otimizar tamanho da imagem
 
-# Estágio 1: Build
+# ============================================
+# Stage 1: Builder
+# ============================================
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -12,53 +15,54 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 # Instalar dependências
-RUN npm ci --only=production=false
-
-# Gerar Prisma Client
-RUN npx prisma generate
+RUN npm ci
 
 # Copiar código fonte
 COPY . .
 
+# Gerar Prisma Client
+RUN npx prisma generate
+
 # Build do frontend
 RUN npm run build
 
-# Build do servidor backend
+# Build do backend
 RUN npm run server:build
 
-# Estágio 2: Produção
+# ============================================
+# Stage 2: Production
+# ============================================
 FROM node:18-alpine AS production
 
 WORKDIR /app
 
-# Instalar Prisma CLI e dependências de produção
+# Instalar apenas dependências de produção
 COPY package*.json ./
-COPY prisma ./prisma/
+RUN npm ci --production
 
-RUN npm ci --only=production && \
-    npm install -g prisma && \
-    npx prisma generate
-
-# Copiar arquivos compilados do builder
+# Copiar arquivos buildados
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/dist-server ./dist-server
-COPY --from=builder /app/public ./public
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
-# Criar diretório para logs e dados
-RUN mkdir -p logs prisma/data
+# Criar usuário não-root
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
 
-# Variáveis de ambiente padrão
-ENV NODE_ENV=production
-ENV PORT=4000
-ENV HOST=0.0.0.0
+# Mudar ownership
+RUN chown -R nodejs:nodejs /app
+
+# Mudar para usuário não-root
+USER nodejs
 
 # Expor porta
 EXPOSE 4000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:4000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Comando de inicialização
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist-server/index.js"]
+CMD ["npm", "run", "server:prod"]
 

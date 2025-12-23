@@ -813,3 +813,40 @@ img {
 .skip-link:focus {
   top: 0;
 }
+
+/* Estilos para modais do sistema de controle de ponto */
+.modal-overlay {
+  position: fixed !important;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999 !important;
+  pointer-events: auto !important;
+}
+
+.modal-content {
+  position: relative !important;
+  z-index: 100000 !important;
+  pointer-events: auto !important;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Garantir que modais não sejam bloqueados */
+[data-modal="true"] {
+  pointer-events: auto !important;
+  z-index: 99999 !important;
+  position: fixed !important;
+}
+
+/* Prevenir que elementos pais bloqueiem modais */
+.modal-container {
+  isolation: isolate;
+}
+
+/* Garantir que elementos com overflow não bloqueiem modais */
+body.modal-open {
+  overflow: hidden;
+}

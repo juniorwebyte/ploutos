@@ -42,13 +42,12 @@ export default function ParcelasManager({
   });
 
   // Calcular parcelas automaticamente quando total ou totalParcelas mudam
+  // Apenas gerar parcelas se não existirem - a sincronização completa acontece no handleSaveNota
   useEffect(() => {
-    if (total > 0 && totalParcelas > 0) {
+    if (total > 0 && totalParcelas > 0 && parcelas.length === 0) {
       const valorCalculado = total / totalParcelas;
       onValorParcelaChange(valorCalculado);
       
-      // Gerar parcelas automaticamente se não existirem
-      if (parcelas.length === 0) {
         const novasParcelas: ParcelaNotaFiscal[] = [];
         const hoje = new Date();
         
@@ -67,7 +66,9 @@ export default function ParcelasManager({
         }
         
         onParcelasChange(novasParcelas);
-      }
+    } else if (total > 0 && totalParcelas > 0) {
+      const valorCalculado = total / totalParcelas;
+      onValorParcelaChange(valorCalculado);
     }
   }, [total, totalParcelas]);
 

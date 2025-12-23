@@ -21,6 +21,8 @@ model User {
   subscriptions UserSubscription[]
   payments  Payment[]
   auditLogs AuditLog[]
+  timeClockAuditLogs TimeClockAuditLog[]
+  employee  Employee?
 }
 
 model License {
@@ -164,6 +166,411 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([entityType])
+  @@index([createdAt])
+}
+
+// ============================================
+// CONTROLE DE PONTO - MODELOS
+// ============================================
+
+// Empresas (multi-tenant)
+model Company {
+  id          String    @id @default(uuid())
+  name        String
+  cnpj        String?   @unique
+  email       String?
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  branches    Branch[]
+  employees   Employee[]
+  schedules   WorkSchedule[]
+  holidays    Holiday[]
+  settings    CompanySettings?
+  
+  @@index([isActive])
+}
+
+// Filiais
+model Branch {
+  id          String    @id @default(uuid())
+  company     Company   @relation(fields: [companyId], references: [id])
+  companyId   String
+  name        String
+  code        String?
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  latitude    Float?
+  longitude   Float?
+  radius      Float?    @default(100.0) // Raio em metros para geolocalização
+  authorizedIPs String? // JSON array de IPs autorizados
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  employees   Employee[]
+  timeClocks  TimeClock[]
+  qrCodes     QRCode[]
+  
+  @@index([companyId])
+  @@index([isActive])
+}
+
+// Departamentos/Setores
+model Department {
+  id          String    @id @default(uuid())
+  name        String
+  code        String?
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  employees   Employee[]
+  
+  @@index([isActive])
+}
+
+// Funcionários
+model Employee {
+  id              String    @id @default(uuid())
+  company         Company   @relation(fields: [companyId], references: [id])
+  companyId       String
+  branch          Branch?   @relation(fields: [branchId], references: [id])
+  branchId        String?
+  department      Department? @relation(fields: [departmentId], references: [id])
+  departmentId    String?
+  user            User?     @relation(fields: [userId], references: [id])
+  userId          String?   @unique
+  
+  // Dados pessoais
+  name            String
+  cpf             String?   @unique
+  rg              String?
+  email           String?
+  phone           String?
+  birthDate       DateTime?
+  address         String?
+  
+  // Dados profissionais
+  employeeCode    String?   @unique
+  position        String?   // Cargo
+  function        String?   // Função
+  contractType    String?   // CLT | PJ | Estagiário | etc
+  hireDate        DateTime?
+  dismissalDate   DateTime?
+  salary          Float?
+  
+  // Jornada e escala
+  workSchedule    WorkSchedule? @relation(fields: [workScheduleId], references: [id])
+  workScheduleId  String?
+  workHours       Float?    @default(8.0) // Horas diárias
+  workDays        String?   // JSON array: ["monday", "tuesday", ...]
+  
+  // Controle de acesso
+  accessLevel     String    @default("employee") // employee | manager | admin
+  canRegisterPoint Boolean  @default(true)
+  qrCode          String?   @unique // QR Code único para registro
+  qrCodeExpiresAt DateTime?
+  biometricId     String?   // Preparado para biometria futura
+  
+  // Status
+  isActive        Boolean   @default(true)
+  status          String    @default("active") // active | inactive | suspended | dismissed
+  
+  // Banco de horas
+  hourBalance     Float     @default(0.0) // Saldo de horas (positivo = crédito, negativo = débito)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  timeClocks      TimeClock[]
+  justifications  Justification[]
+  hourAdjustments HourAdjustment[]
+  qrCodes         QRCode[]
+  
+  @@index([companyId])
+  @@index([branchId])
+  @@index([departmentId])
+  @@index([userId])
+  @@index([cpf])
+  @@index([employeeCode])
+  @@index([isActive])
+  @@index([status])
+}
+
+// Jornadas de trabalho
+model WorkSchedule {
+  id          String    @id @default(uuid())
+  company     Company   @relation(fields: [companyId], references: [id])
+  companyId   String
+  name        String
+  description String?
+  
+  // Tipo de jornada
+  type        String    // fixed | flexible | shift_12x36 | custom
+  workDays    String    // JSON array: ["monday", "tuesday", ...]
+  workHours   Float     @default(8.0)
+  
+  // Horários fixos
+  startTime   String?   // HH:mm
+  endTime     String?   // HH:mm
+  breakStart  String?   // HH:mm
+  breakEnd    String?   // HH:mm
+  breakDuration Int?    // Minutos
+  
+  // Horários flexíveis
+  minHours    Float?
+  maxHours    Float?
+  
+  // Escala 12x36
+  shiftDays   Int?      // Dias trabalhados
+  restDays    Int?      // Dias de descanso
+  
+  // Configurações
+  allowOvertime Boolean  @default(true)
+  maxOvertime    Float?   // Horas máximas de extra
+  tolerance      Int?     @default(5) // Tolerância em minutos para atraso
+  
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  employees   Employee[]
+  
+  @@index([companyId])
+  @@index([isActive])
+}
+
+// Registros de ponto
+model TimeClock {
+  id          String    @id @default(uuid())
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  employeeId  String
+  branch      Branch?   @relation(fields: [branchId], references: [id])
+  branchId    String?
+  
+  // Tipo de marcação
+  type        String    // entry | exit | break_start | break_end | overtime_start | overtime_end
+  timestamp   DateTime  @default(now())
+  
+  // Localização
+  latitude    Float?
+  longitude   Float?
+  address     String?
+  ipAddress   String?
+  
+  // Método de registro
+  method      String    // manual | qrcode | geolocation | ip | biometric
+  qrCodeId    String?   // ID do QR Code usado (se aplicável)
+  
+  // Validações
+  isValid     Boolean   @default(true)
+  validationMessage String?
+  isDuplicate Boolean  @default(false)
+  
+  // Observações
+  notes       String?
+  
+  // Ajustes e justificativas
+  justification Justification? @relation(fields: [justificationId], references: [id])
+  justificationId String?
+  adjustedBy   String?   // ID do usuário que ajustou
+  adjustedAt   DateTime?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([employeeId])
+  @@index([branchId])
+  @@index([type])
+  @@index([timestamp])
+  @@index([isValid])
+  @@index([createdAt])
+}
+
+// Justificativas e ocorrências
+model Justification {
+  id          String    @id @default(uuid())
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  employeeId  String
+  
+  // Tipo de justificativa
+  type        String    // absence | delay | early_exit | adjustment | overtime | other
+  reason      String    // Motivo
+  description String?   // Descrição detalhada
+  
+  // Período
+  startDate   DateTime
+  endDate     DateTime?
+  startTime   String?   // HH:mm
+  endTime     String?   // HH:mm
+  
+  // Anexos
+  attachments String?   // JSON array de URLs de arquivos
+  
+  // Fluxo de aprovação
+  status      String    @default("pending") // pending | approved | rejected | cancelled
+  requestedBy String?   // ID do usuário que solicitou
+  approvedBy  String?   // ID do usuário que aprovou
+  rejectedBy  String?   // ID do usuário que rejeitou
+  approvedAt  DateTime?
+  rejectedAt  DateTime?
+  rejectionReason String?
+  
+  // Relacionamento com registros de ponto
+  timeClocks  TimeClock[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([employeeId])
+  @@index([type])
+  @@index([status])
+  @@index([startDate])
+  @@index([createdAt])
+}
+
+// Ajustes de banco de horas
+model HourAdjustment {
+  id          String    @id @default(uuid())
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  employeeId  String
+  
+  type        String    // credit | debit | compensation
+  hours       Float     // Quantidade de horas
+  reason      String
+  description String?
+  
+  // Período relacionado
+  periodStart DateTime?
+  periodEnd   DateTime?
+  
+  // Aprovação
+  status      String    @default("pending") // pending | approved | rejected
+  approvedBy  String?
+  approvedAt  DateTime?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([employeeId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Feriados
+model Holiday {
+  id          String    @id @default(uuid())
+  company     Company   @relation(fields: [companyId], references: [id])
+  companyId   String
+  
+  name        String
+  date        DateTime
+  type        String    @default("national") // national | state | municipal | company
+  state       String?   // UF (se estadual)
+  city        String?   // Cidade (se municipal)
+  isRecurring Boolean   @default(false) // Se repete anualmente
+  isPaid      Boolean   @default(true) // Se é pago
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([companyId])
+  @@index([date])
+  @@index([type])
+}
+
+// Configurações da empresa
+model CompanySettings {
+  id          String    @id @default(uuid())
+  company     Company   @relation(fields: [companyId], references: [id])
+  companyId   String    @unique
+  
+  // Configurações gerais
+  requireGeolocation Boolean @default(false)
+  requireIPValidation Boolean @default(false)
+  allowManualEntry    Boolean @default(true)
+  allowQRCode         Boolean @default(true)
+  
+  // Tolerâncias
+  delayTolerance      Int     @default(5) // Minutos
+  earlyExitTolerance  Int     @default(5) // Minutos
+  
+  // Notificações
+  notifyMissingPoint  Boolean @default(true)
+  notifyOvertime      Boolean @default(true)
+  notifyDelays        Boolean @default(true)
+  
+  // Automações
+  autoCalculateOvertime Boolean @default(true)
+  autoCompensateHours   Boolean @default(false)
+  
+  // Compliance
+  requireDigitalSignature Boolean @default(false)
+  signatureKey           String?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// QR Codes dinâmicos para registro
+model QRCode {
+  id          String    @id @default(uuid())
+  employee    Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId  String?
+  branch      Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId    String?
+  
+  code        String    @unique // Código único do QR
+  token       String    @unique // Token de segurança
+  expiresAt   DateTime
+  
+  isUsed      Boolean   @default(false)
+  usedAt      DateTime?
+  usedBy      String?   // ID do funcionário que usou
+  
+  createdAt   DateTime  @default(now())
+  
+  @@index([employeeId])
+  @@index([branchId])
+  @@index([code])
+  @@index([token])
+  @@index([expiresAt])
+  @@index([isUsed])
+}
+
+// Logs de auditoria específicos do controle de ponto
+model TimeClockAuditLog {
+  id          String    @id @default(uuid())
+  user        User?     @relation(fields: [userId], references: [id])
+  userId      String?
+  
+  action      String    // timeclock.created | timeclock.updated | timeclock.deleted | justification.approved | etc
+  entityType  String    // timeclock | justification | employee | schedule
+  entityId    String?
+  
+  oldValue    String?   // JSON string do valor anterior
+  newValue    String?   // JSON string do novo valor
+  details     String?   // JSON string com detalhes adicionais
+  
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
   @@index([createdAt])
 }
 

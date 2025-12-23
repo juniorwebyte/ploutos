@@ -1610,6 +1610,1901 @@ app.post('/api/admin/subscriptions/check-expiring', authMiddleware(), requireRol
   }
 });
 
+// ============================================
+// CONTROLE DE PONTO - APIs
+// ============================================
+
+// Helper para criar log de auditoria
+async function createTimeClockAuditLog(
+  userId: string | undefined,
+  action: string,
+  entityType: string,
+  entityId: string | undefined,
+  oldValue: any,
+  newValue: any,
+  details: any,
+  req: express.Request
+) {
+  try {
+    await prisma.timeClockAuditLog.create({
+      data: {
+        userId: userId || undefined,
+        action,
+        entityType,
+        entityId: entityId || undefined,
+        oldValue: oldValue ? JSON.stringify(oldValue) : undefined,
+        newValue: newValue ? JSON.stringify(newValue) : undefined,
+        details: details ? JSON.stringify(details) : undefined,
+        ipAddress: req.ip || req.socket.remoteAddress || undefined,
+        userAgent: req.get('user-agent') || undefined,
+      },
+    });
+  } catch (e) {
+    console.warn('Erro ao criar log de auditoria:', e);
+  }
+}
+
+// ============================================
+// EMPRESAS
+// ============================================
+
+app.get('/api/timeclock/companies', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const companies = await prisma.company.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(companies);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.get('/api/timeclock/companies/:id', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const company = await prisma.company.findUnique({
+      where: { id },
+      include: {
+        branches: true,
+        employees: true,
+        schedules: true,
+        holidays: true,
+        settings: true,
+      },
+    });
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+    res.json(company);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/companies', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    console.log('POST /api/timeclock/companies - Body recebido:', JSON.stringify(req.body, null, 2));
+    console.log('POST /api/timeclock/companies - Headers:', req.headers);
+    
+    const body = z.object({
+      name: z.string().min(2),
+      cnpj: z.string().optional().nullable(),
+      email: z.union([z.string().email(), z.literal(''), z.null()]).optional().nullable(),
+      phone: z.string().optional().nullable(),
+      address: z.string().optional().nullable(),
+      city: z.string().optional().nullable(),
+      state: z.string().optional().nullable(),
+      zipCode: z.string().optional().nullable(),
+      isActive: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!body.success) {
+      console.error('Erro de validação:', body.error.errors);
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    // Preparar dados - incluir todos os campos, mesmo null
+    const data: any = {
+      name: body.data.name,
+      cnpj: body.data.cnpj || null,
+      email: body.data.email || null,
+      phone: body.data.phone || null,
+      address: body.data.address || null,
+      city: body.data.city || null,
+      state: body.data.state || null,
+      zipCode: body.data.zipCode || null,
+      isActive: body.data.isActive !== undefined ? body.data.isActive : true,
+    };
+
+    console.log('Dados preparados para criação:', JSON.stringify(data, null, 2));
+    
+    const company = await prisma.company.create({
+      data,
+    });
+
+    console.log('Empresa criada com sucesso:', company.id);
+
+    // Criar configurações padrão
+    await prisma.companySettings.create({
+      data: {
+        companyId: company.id,
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'company.created',
+      'company',
+      company.id,
+      null,
+      company,
+      { name: company.name },
+      req
+    );
+
+    res.json(company);
+  } catch (e: any) {
+    console.error('Erro ao criar empresa:', e);
+    res.status(500).json({ error: e?.message || 'failed', stack: process.env.NODE_ENV === 'development' ? e?.stack : undefined });
+  }
+});
+
+app.patch('/api/timeclock/companies/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const body = z.object({
+      name: z.string().min(2).optional(),
+      cnpj: z.string().optional(),
+      email: z.union([z.string().email(), z.literal(''), z.null()]).optional(),
+      phone: z.string().optional(),
+      address: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      zipCode: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const oldCompany = await prisma.company.findUnique({ where: { id } });
+    if (!oldCompany) return res.status(404).json({ error: 'Company not found' });
+
+    // Preparar dados - converter campos vazios para null
+    const updateData: any = {};
+    if (body.data.name !== undefined) updateData.name = body.data.name;
+    if (body.data.cnpj !== undefined) updateData.cnpj = body.data.cnpj || null;
+    if (body.data.email !== undefined) updateData.email = body.data.email || null;
+    if (body.data.phone !== undefined) updateData.phone = body.data.phone || null;
+    if (body.data.address !== undefined) updateData.address = body.data.address || null;
+    if (body.data.city !== undefined) updateData.city = body.data.city || null;
+    if (body.data.state !== undefined) updateData.state = body.data.state || null;
+    if (body.data.zipCode !== undefined) updateData.zipCode = body.data.zipCode || null;
+    if (body.data.isActive !== undefined) updateData.isActive = body.data.isActive;
+
+    const company = await prisma.company.update({
+      where: { id },
+      data: updateData,
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'company.updated',
+      'company',
+      company.id,
+      oldCompany,
+      company,
+      {},
+      req
+    );
+
+    res.json(company);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.delete('/api/timeclock/companies/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const company = await prisma.company.findUnique({ where: { id } });
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+
+    await prisma.company.delete({ where: { id } });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'company.deleted',
+      'company',
+      id,
+      company,
+      null,
+      {},
+      req
+    );
+
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// FILIAIS
+// ============================================
+
+app.get('/api/timeclock/branches', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    const where: any = {};
+    if (companyId) where.companyId = companyId as string;
+
+    const branches = await prisma.branch.findMany({
+      where,
+      include: { company: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(branches);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.get('/api/timeclock/branches/:id', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const branch = await prisma.branch.findUnique({
+      where: { id },
+      include: { company: true, employees: true },
+    });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    res.json(branch);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/branches', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      companyId: z.string(),
+      name: z.string().min(2),
+      code: z.string().optional(),
+      address: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      zipCode: z.string().optional(),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+      radius: z.number().optional(),
+      authorizedIPs: z.string().optional(), // JSON string
+    }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    // Preparar dados - processar authorizedIPs e converter campos vazios para null
+    const data: any = {
+      companyId: body.data.companyId,
+      name: body.data.name,
+      code: body.data.code || null,
+      address: body.data.address || null,
+      city: body.data.city || null,
+      state: body.data.state || null,
+      zipCode: body.data.zipCode || null,
+      latitude: body.data.latitude || null,
+      longitude: body.data.longitude || null,
+      radius: body.data.radius || 100,
+      isActive: true,
+    };
+    
+    // Processar authorizedIPs se fornecido - salvar como JSON string
+    if (body.data.authorizedIPs) {
+      try {
+        let ips: string[];
+        if (typeof body.data.authorizedIPs === 'string') {
+          // Tentar parsear como JSON primeiro
+          try {
+            ips = JSON.parse(body.data.authorizedIPs);
+          } catch {
+            // Se não for JSON, tratar como string separada por vírgula
+            ips = body.data.authorizedIPs.split(',').map((ip: string) => ip.trim()).filter((ip: string) => ip.length > 0);
+          }
+        } else if (Array.isArray(body.data.authorizedIPs)) {
+          ips = body.data.authorizedIPs;
+        } else {
+          ips = [];
+        }
+        if (ips.length > 0) {
+          data.authorizedIPs = JSON.stringify(ips);
+        }
+      } catch (e) {
+        console.error('Erro ao processar authorizedIPs:', e);
+      }
+    }
+
+    const branch = await prisma.branch.create({
+      data,
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'branch.created',
+      'branch',
+      branch.id,
+      null,
+      branch,
+      { name: branch.name, companyId: branch.companyId },
+      req
+    );
+
+    res.json(branch);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.patch('/api/timeclock/branches/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const body = z.object({
+      name: z.string().min(2).optional(),
+      code: z.string().optional(),
+      address: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      zipCode: z.string().optional(),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+      radius: z.number().optional(),
+      authorizedIPs: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    const oldBranch = await prisma.branch.findUnique({ where: { id } });
+    if (!oldBranch) return res.status(404).json({ error: 'Branch not found' });
+
+    // Preparar dados - processar authorizedIPs e converter campos vazios para null
+    const updateData: any = {};
+    if (body.data.name !== undefined) updateData.name = body.data.name;
+    if (body.data.code !== undefined) updateData.code = body.data.code || null;
+    if (body.data.address !== undefined) updateData.address = body.data.address || null;
+    if (body.data.city !== undefined) updateData.city = body.data.city || null;
+    if (body.data.state !== undefined) updateData.state = body.data.state || null;
+    if (body.data.zipCode !== undefined) updateData.zipCode = body.data.zipCode || null;
+    if (body.data.latitude !== undefined) updateData.latitude = body.data.latitude || null;
+    if (body.data.longitude !== undefined) updateData.longitude = body.data.longitude || null;
+    if (body.data.radius !== undefined) updateData.radius = body.data.radius || 100;
+    if (body.data.isActive !== undefined) updateData.isActive = body.data.isActive;
+    
+    // Processar authorizedIPs se fornecido
+    if (body.data.authorizedIPs !== undefined) {
+      if (body.data.authorizedIPs) {
+        try {
+          let ips: string[];
+          if (typeof body.data.authorizedIPs === 'string') {
+            try {
+              ips = JSON.parse(body.data.authorizedIPs);
+            } catch {
+              ips = body.data.authorizedIPs.split(',').map((ip: string) => ip.trim()).filter((ip: string) => ip.length > 0);
+            }
+          } else if (Array.isArray(body.data.authorizedIPs)) {
+            ips = body.data.authorizedIPs;
+          } else {
+            ips = [];
+          }
+          if (ips.length > 0) {
+            updateData.authorizedIPs = JSON.stringify(ips);
+          } else {
+            updateData.authorizedIPs = null;
+          }
+        } catch (e) {
+          console.error('Erro ao processar authorizedIPs:', e);
+        }
+      } else {
+        updateData.authorizedIPs = null;
+      }
+    }
+
+    const branch = await prisma.branch.update({
+      where: { id },
+      data: updateData,
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'branch.updated',
+      'branch',
+      branch.id,
+      oldBranch,
+      branch,
+      {},
+      req
+    );
+
+    res.json(branch);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.delete('/api/timeclock/branches/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const branch = await prisma.branch.findUnique({ where: { id } });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    await prisma.branch.delete({ where: { id } });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'branch.deleted',
+      'branch',
+      id,
+      branch,
+      null,
+      {},
+      req
+    );
+
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// DEPARTAMENTOS
+// ============================================
+
+app.get('/api/timeclock/departments', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const departments = await prisma.department.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(departments);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.get('/api/timeclock/departments/:id', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const department = await prisma.department.findUnique({
+      where: { id },
+    });
+    if (!department) return res.status(404).json({ error: 'Department not found' });
+    res.json(department);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/departments', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      name: z.string().min(2),
+      code: z.string().optional().nullable(),
+      description: z.string().optional().nullable(),
+      isActive: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    // Preparar dados
+    const data: any = {
+      name: body.data.name,
+      code: body.data.code || null,
+      description: body.data.description || null,
+      isActive: body.data.isActive !== undefined ? body.data.isActive : true,
+    };
+
+    const department = await prisma.department.create({
+      data,
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'department.created',
+      'department',
+      department.id,
+      null,
+      department,
+      { name: department.name },
+      req
+    );
+
+    res.json(department);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.patch('/api/timeclock/departments/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const body = z.object({
+      name: z.string().min(2).optional(),
+      code: z.string().optional(),
+      description: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    const oldDept = await prisma.department.findUnique({ where: { id } });
+    if (!oldDept) return res.status(404).json({ error: 'Department not found' });
+
+    const department = await prisma.department.update({
+      where: { id },
+      data: body.data,
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'department.updated',
+      'department',
+      department.id,
+      oldDept,
+      department,
+      {},
+      req
+    );
+
+    res.json(department);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.delete('/api/timeclock/departments/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.department.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// FUNCIONÁRIOS
+// ============================================
+
+app.get('/api/timeclock/employees', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { companyId, branchId, departmentId, status, isActive } = req.query;
+    const where: any = {};
+    if (companyId) where.companyId = companyId as string;
+    if (branchId) where.branchId = branchId as string;
+    if (departmentId) where.departmentId = departmentId as string;
+    if (status) where.status = status as string;
+    if (isActive !== undefined) where.isActive = isActive === 'true';
+
+    const employees = await prisma.employee.findMany({
+      where,
+      include: {
+        workSchedule: true,
+        branch: true,
+        department: true,
+        user: {
+          select: { id: true, username: true, email: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(employees);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.get('/api/timeclock/employees/:id', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const employee = await prisma.employee.findUnique({
+      where: { id },
+      include: {
+        workSchedule: true,
+        branch: { include: { company: true } },
+        department: true,
+        user: true,
+      },
+    });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    res.json(employee);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/employees', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      companyId: z.string(),
+      branchId: z.string().optional(),
+      departmentId: z.string().optional(),
+      userId: z.string().optional(),
+      name: z.string().min(2),
+      cpf: z.string().optional(),
+      rg: z.string().optional(),
+      email: z.union([z.string().email(), z.literal('')]).optional(),
+      phone: z.string().optional(),
+      birthDate: z.string().optional(),
+      address: z.string().optional(),
+      employeeCode: z.string().optional(),
+      position: z.string().optional(),
+      function: z.string().optional(),
+      contractType: z.string().optional(),
+      hireDate: z.string().optional(),
+      salary: z.number().optional(),
+      workScheduleId: z.string().optional(),
+      workHours: z.number().optional(),
+      workDays: z.string().optional(), // JSON string
+      accessLevel: z.enum(['employee', 'manager', 'admin']).optional(),
+      canRegisterPoint: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    // Preparar dados - converter campos vazios para null
+    const data: any = {
+      companyId: body.data.companyId,
+      name: body.data.name,
+      branchId: body.data.branchId || null,
+      departmentId: body.data.departmentId || null,
+      userId: body.data.userId || null,
+      cpf: body.data.cpf || null,
+      rg: body.data.rg || null,
+      email: body.data.email || null,
+      phone: body.data.phone || null,
+      birthDate: body.data.birthDate ? new Date(body.data.birthDate) : null,
+      address: body.data.address || null,
+      employeeCode: body.data.employeeCode || null,
+      position: body.data.position || null,
+      function: body.data.function || null,
+      contractType: body.data.contractType || null,
+      hireDate: body.data.hireDate ? new Date(body.data.hireDate) : null,
+      salary: body.data.salary || null,
+      workScheduleId: body.data.workScheduleId || null,
+      workHours: body.data.workHours || null,
+      accessLevel: body.data.accessLevel || 'employee',
+      canRegisterPoint: body.data.canRegisterPoint !== undefined ? body.data.canRegisterPoint : true,
+      status: 'active',
+      isActive: true,
+    };
+    if (body.data.workDays) {
+      try {
+        const days = typeof body.data.workDays === 'string' ? JSON.parse(body.data.workDays) : body.data.workDays;
+        if (Array.isArray(days)) {
+          data.workDays = JSON.stringify(days);
+        }
+      } catch {
+        // Ignorar erro
+      }
+    }
+
+    const employee = await prisma.employee.create({
+      data,
+      include: {
+        workSchedule: true,
+        branch: true,
+        department: true,
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'employee.created',
+      'employee',
+      employee.id,
+      null,
+      employee,
+      { name: employee.name, companyId: employee.companyId },
+      req
+    );
+
+    res.json(employee);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.patch('/api/timeclock/employees/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const body = z.object({
+      name: z.string().min(2).optional(),
+      branchId: z.string().optional(),
+      departmentId: z.string().optional(),
+      position: z.string().optional(),
+      function: z.string().optional(),
+      contractType: z.string().optional(),
+      workScheduleId: z.string().optional(),
+      workHours: z.number().optional(),
+      accessLevel: z.enum(['employee', 'manager', 'admin']).optional(),
+      canRegisterPoint: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+      status: z.enum(['active', 'inactive', 'suspended', 'dismissed']).optional(),
+    }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    const oldEmployee = await prisma.employee.findUnique({ where: { id } });
+    if (!oldEmployee) return res.status(404).json({ error: 'Employee not found' });
+
+    const employee = await prisma.employee.update({
+      where: { id },
+      data: body.data,
+      include: {
+        workSchedule: true,
+        branch: true,
+        department: true,
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'employee.updated',
+      'employee',
+      employee.id,
+      oldEmployee,
+      employee,
+      {},
+      req
+    );
+
+    res.json(employee);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.delete('/api/timeclock/employees/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    await prisma.employee.delete({ where: { id } });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'employee.deleted',
+      'employee',
+      id,
+      employee,
+      null,
+      {},
+      req
+    );
+
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// Gerar QR Code para funcionário
+app.post('/api/timeclock/employees/:id/qrcode', authMiddleware(), requireRole('admin', 'superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    const code = `QR${Date.now()}${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+    const token = require('crypto').randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos
+
+    const qrCode = await prisma.qRCode.create({
+      data: {
+        employeeId: id,
+        code,
+        token,
+        expiresAt,
+      },
+    });
+
+    await prisma.employee.update({
+      where: { id },
+      data: {
+        qrCode: code,
+        qrCodeExpiresAt: expiresAt,
+      },
+    });
+
+    res.json(qrCode);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// JORNADAS DE TRABALHO
+// ============================================
+
+app.get('/api/timeclock/schedules', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    const where: any = {};
+    if (companyId) where.companyId = companyId as string;
+
+    const schedules = await prisma.workSchedule.findMany({
+      where,
+      include: { company: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(schedules);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/schedules', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      companyId: z.string(),
+      name: z.string().min(2),
+      description: z.string().optional(),
+      type: z.enum(['fixed', 'flexible', 'shift_12x36', 'custom']),
+      workDays: z.string().optional(), // JSON string
+      workHours: z.number().default(8),
+      startTime: z.string().optional(),
+      endTime: z.string().optional(),
+      breakStart: z.string().optional(),
+      breakEnd: z.string().optional(),
+      breakDuration: z.number().optional(),
+      minHours: z.number().optional(),
+      maxHours: z.number().optional(),
+      shiftDays: z.number().optional(),
+      restDays: z.number().optional(),
+      allowOvertime: z.boolean().optional(),
+      maxOvertime: z.number().optional(),
+      tolerance: z.number().optional(),
+    }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    // Preparar dados - processar workDays e converter campos vazios para null
+    const data: any = {
+      companyId: body.data.companyId,
+      name: body.data.name,
+      type: body.data.type,
+      workHours: body.data.workHours || 8,
+      description: body.data.description || null,
+      startTime: body.data.startTime || null,
+      endTime: body.data.endTime || null,
+      breakStart: body.data.breakStart || null,
+      breakEnd: body.data.breakEnd || null,
+      breakDuration: body.data.breakDuration || null,
+      minHours: body.data.minHours || null,
+      maxHours: body.data.maxHours || null,
+      shiftDays: body.data.shiftDays || null,
+      restDays: body.data.restDays || null,
+      allowOvertime: body.data.allowOvertime !== undefined ? body.data.allowOvertime : true,
+      maxOvertime: body.data.maxOvertime || null,
+      tolerance: body.data.tolerance || 5,
+    };
+    
+    // Processar workDays - salvar como JSON string
+    if (body.data.workDays) {
+      try {
+        let days: string[];
+        if (typeof body.data.workDays === 'string') {
+          try {
+            days = JSON.parse(body.data.workDays);
+          } catch {
+            // Se não for JSON, tratar como string separada por vírgula
+            days = body.data.workDays.split(',').map((d: string) => d.trim().toLowerCase()).filter((d: string) => d.length > 0);
+          }
+        } else if (Array.isArray(body.data.workDays)) {
+          days = body.data.workDays;
+        } else {
+          days = [];
+        }
+        if (days.length > 0) {
+          data.workDays = JSON.stringify(days);
+        } else {
+          data.workDays = JSON.stringify(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
+        }
+      } catch (e) {
+        console.error('Erro ao processar workDays:', e);
+        data.workDays = JSON.stringify(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
+      }
+    } else {
+      data.workDays = JSON.stringify(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
+    }
+
+    const schedule = await prisma.workSchedule.create({
+      data,
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'schedule.created',
+      'schedule',
+      schedule.id,
+      null,
+      schedule,
+      { name: schedule.name, companyId: schedule.companyId },
+      req
+    );
+
+    res.json(schedule);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.patch('/api/timeclock/schedules/:id', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const body = z.object({
+      companyId: z.string().optional(),
+      name: z.string().min(2).optional(),
+      description: z.string().optional(),
+      type: z.enum(['fixed', 'flexible', 'shift_12x36', 'custom']).optional(),
+      workDays: z.string().optional(),
+      workHours: z.number().optional(),
+      startTime: z.string().optional(),
+      endTime: z.string().optional(),
+      breakStart: z.string().optional(),
+      breakEnd: z.string().optional(),
+      breakDuration: z.number().optional(),
+      minHours: z.number().optional(),
+      maxHours: z.number().optional(),
+      shiftDays: z.number().optional(),
+      restDays: z.number().optional(),
+      allowOvertime: z.boolean().optional(),
+      maxOvertime: z.number().optional(),
+      tolerance: z.number().optional(),
+    }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.errors });
+    }
+
+    const oldSchedule = await prisma.workSchedule.findUnique({ where: { id } });
+    if (!oldSchedule) return res.status(404).json({ error: 'Schedule not found' });
+
+    // Preparar dados de atualização
+    const updateData: any = {};
+    if (body.data.companyId !== undefined) updateData.companyId = body.data.companyId;
+    if (body.data.name !== undefined) updateData.name = body.data.name;
+    if (body.data.description !== undefined) updateData.description = body.data.description || null;
+    if (body.data.type !== undefined) updateData.type = body.data.type;
+    if (body.data.workHours !== undefined) updateData.workHours = body.data.workHours;
+    if (body.data.startTime !== undefined) updateData.startTime = body.data.startTime || null;
+    if (body.data.endTime !== undefined) updateData.endTime = body.data.endTime || null;
+    if (body.data.breakStart !== undefined) updateData.breakStart = body.data.breakStart || null;
+    if (body.data.breakEnd !== undefined) updateData.breakEnd = body.data.breakEnd || null;
+    if (body.data.breakDuration !== undefined) updateData.breakDuration = body.data.breakDuration || null;
+    if (body.data.minHours !== undefined) updateData.minHours = body.data.minHours || null;
+    if (body.data.maxHours !== undefined) updateData.maxHours = body.data.maxHours || null;
+    if (body.data.shiftDays !== undefined) updateData.shiftDays = body.data.shiftDays || null;
+    if (body.data.restDays !== undefined) updateData.restDays = body.data.restDays || null;
+    if (body.data.allowOvertime !== undefined) updateData.allowOvertime = body.data.allowOvertime;
+    if (body.data.maxOvertime !== undefined) updateData.maxOvertime = body.data.maxOvertime || null;
+    if (body.data.tolerance !== undefined) updateData.tolerance = body.data.tolerance || 5;
+
+    // Processar workDays se fornecido
+    if (body.data.workDays !== undefined) {
+      try {
+        let days: string[];
+        if (typeof body.data.workDays === 'string') {
+          try {
+            days = JSON.parse(body.data.workDays);
+          } catch {
+            days = body.data.workDays.split(',').map((d: string) => d.trim().toLowerCase()).filter((d: string) => d.length > 0);
+          }
+        } else if (Array.isArray(body.data.workDays)) {
+          days = body.data.workDays;
+        } else {
+          days = [];
+        }
+        if (days.length > 0) {
+          updateData.workDays = JSON.stringify(days);
+        }
+      } catch (e) {
+        console.error('Erro ao processar workDays:', e);
+      }
+    }
+
+    const schedule = await prisma.workSchedule.update({
+      where: { id },
+      data: updateData,
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'schedule.updated',
+      'schedule',
+      schedule.id,
+      oldSchedule,
+      schedule,
+      {},
+      req
+    );
+
+    res.json(schedule);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// REGISTRO DE PONTO
+// ============================================
+
+app.post('/api/timeclock/register', authMiddleware(), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      employeeId: z.string(),
+      type: z.enum(['entry', 'exit', 'break_start', 'break_end', 'overtime_start', 'overtime_end']),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+      method: z.enum(['manual', 'qrcode', 'geolocation', 'ip', 'biometric']),
+      qrCodeId: z.string().optional(),
+      notes: z.string().optional(),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: body.data.employeeId },
+      include: { branch: true },
+    });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    if (!employee.isActive || employee.status !== 'active') {
+      return res.status(403).json({ error: 'Employee is not active' });
+    }
+
+    // Validações
+    let isValid = true;
+    let validationMessage = '';
+    const ipAddress = req.ip || req.socket.remoteAddress || undefined;
+
+    // Validar geolocalização se necessário
+    if (body.data.latitude && body.data.longitude && employee.branch) {
+      const branch = employee.branch;
+      if (branch.latitude && branch.longitude && branch.radius) {
+        const distance = calculateDistance(
+          body.data.latitude,
+          body.data.longitude,
+          branch.latitude,
+          branch.longitude
+        );
+        if (distance > branch.radius) {
+          isValid = false;
+          validationMessage = `Registro fora do raio permitido (${distance.toFixed(0)}m > ${branch.radius}m)`;
+        }
+      }
+    }
+
+    // Validar IP se necessário
+    if (ipAddress && employee.branch?.authorizedIPs) {
+      try {
+        const authorizedIPs = JSON.parse(employee.branch.authorizedIPs);
+        if (Array.isArray(authorizedIPs) && !authorizedIPs.includes(ipAddress)) {
+          isValid = false;
+          validationMessage = 'IP não autorizado para esta filial';
+        }
+      } catch {}
+    }
+
+    // Verificar duplicatas (mesmo tipo no mesmo dia)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const existingRecord = await prisma.timeClock.findFirst({
+      where: {
+        employeeId: body.data.employeeId,
+        type: body.data.type,
+        timestamp: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+    });
+
+    const isDuplicate = !!existingRecord;
+
+    // Criar registro
+    const timeClock = await prisma.timeClock.create({
+      data: {
+        employeeId: body.data.employeeId,
+        branchId: employee.branchId || undefined,
+        type: body.data.type,
+        timestamp: new Date(),
+        latitude: body.data.latitude,
+        longitude: body.data.longitude,
+        ipAddress,
+        method: body.data.method,
+        qrCodeId: body.data.qrCodeId,
+        isValid,
+        validationMessage: validationMessage || undefined,
+        isDuplicate,
+        notes: body.data.notes,
+      },
+      include: {
+        employee: {
+          select: { id: true, name: true, employeeCode: true },
+        },
+        branch: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id || employee.userId || undefined,
+      'timeclock.created',
+      'timeclock',
+      timeClock.id,
+      null,
+      timeClock,
+      { employeeId: body.data.employeeId, type: body.data.type },
+      req
+    );
+
+    res.json(timeClock);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// Função auxiliar para calcular distância entre coordenadas
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // Raio da Terra em metros
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distância em metros
+}
+
+app.get('/api/timeclock/records', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { employeeId, branchId, startDate, endDate, type } = req.query;
+    const where: any = {};
+    if (employeeId) where.employeeId = employeeId as string;
+    if (branchId) where.branchId = branchId as string;
+    if (type) where.type = type as string;
+    if (startDate || endDate) {
+      where.timestamp = {};
+      if (startDate) where.timestamp.gte = new Date(startDate as string);
+      if (endDate) {
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        where.timestamp.lte = end;
+      }
+    }
+
+    const records = await prisma.timeClock.findMany({
+      where,
+      include: {
+        employee: {
+          select: { id: true, name: true, employeeCode: true },
+        },
+        branch: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 1000, // Limitar resultados
+    });
+    res.json(records);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// QR CODES
+// ============================================
+
+app.post('/api/timeclock/qrcode/generate', authMiddleware(), requireRole('admin', 'superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      employeeId: z.string().optional(),
+      branchId: z.string().optional(),
+      expiresInMinutes: z.number().optional().default(30),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const crypto = require('crypto');
+    const code = `QR${Date.now()}${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + (body.data.expiresInMinutes || 30) * 60 * 1000);
+
+    const qrCode = await prisma.qRCode.create({
+      data: {
+        employeeId: body.data.employeeId || undefined,
+        branchId: body.data.branchId || undefined,
+        code,
+        token,
+        expiresAt,
+      },
+    });
+
+    res.json(qrCode);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/qrcode/validate', authMiddleware(), async (req, res) => {
+  try {
+    const body = z.object({
+      code: z.string(),
+      token: z.string(),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const qrCode = await prisma.qRCode.findFirst({
+      where: {
+        code: body.data.code,
+        token: body.data.token,
+        isUsed: false,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!qrCode) {
+      return res.json({ valid: false });
+    }
+
+    res.json({ valid: true, qrCode });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/qrcode/use', authMiddleware(), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      code: z.string(),
+      token: z.string(),
+      employeeId: z.string(),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const qrCode = await prisma.qRCode.findFirst({
+      where: {
+        code: body.data.code,
+        token: body.data.token,
+        isUsed: false,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!qrCode) {
+      return res.status(404).json({ error: 'QR Code inválido ou expirado' });
+    }
+
+    const updated = await prisma.qRCode.update({
+      where: { id: qrCode.id },
+      data: {
+        isUsed: true,
+        usedAt: new Date(),
+        usedBy: body.data.employeeId,
+      },
+    });
+
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// JUSTIFICATIVAS
+// ============================================
+
+app.get('/api/timeclock/justifications', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { employeeId, status, type } = req.query;
+    const where: any = {};
+    if (employeeId) where.employeeId = employeeId as string;
+    if (status) where.status = status as string;
+    if (type) where.type = type as string;
+
+    const justifications = await prisma.justification.findMany({
+      where,
+      include: {
+        employee: {
+          select: { id: true, name: true, employeeCode: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(justifications);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/justifications', authMiddleware(), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      employeeId: z.string(),
+      type: z.enum(['absence', 'delay', 'early_exit', 'adjustment', 'overtime', 'other']),
+      reason: z.string().min(3),
+      description: z.string().optional(),
+      startDate: z.string(),
+      endDate: z.string().optional(),
+      startTime: z.string().optional(),
+      endTime: z.string().optional(),
+      attachments: z.string().optional(), // JSON string
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const data: any = {
+      ...body.data,
+      startDate: new Date(body.data.startDate),
+      requestedBy: req.user?.id,
+    };
+    if (data.endDate) data.endDate = new Date(data.endDate);
+    if (data.attachments) {
+      try {
+        data.attachments = JSON.parse(data.attachments);
+      } catch {
+        data.attachments = [];
+      }
+    }
+
+    const justification = await prisma.justification.create({
+      data,
+      include: {
+        employee: {
+          select: { id: true, name: true, employeeCode: true },
+        },
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'justification.created',
+      'justification',
+      justification.id,
+      null,
+      justification,
+      { employeeId: body.data.employeeId, type: body.data.type },
+      req
+    );
+
+    res.json(justification);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/justifications/:id/approve', authMiddleware(), requireRole('admin', 'superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const justification = await prisma.justification.findUnique({ where: { id } });
+    if (!justification) return res.status(404).json({ error: 'Justification not found' });
+
+    const updated = await prisma.justification.update({
+      where: { id },
+      data: {
+        status: 'approved',
+        approvedBy: req.user?.id,
+        approvedAt: new Date(),
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'justification.approved',
+      'justification',
+      id,
+      justification,
+      updated,
+      {},
+      req
+    );
+
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/justifications/:id/reject', authMiddleware(), requireRole('admin', 'superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const body = z.object({ reason: z.string().min(3) }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const justification = await prisma.justification.findUnique({ where: { id } });
+    if (!justification) return res.status(404).json({ error: 'Justification not found' });
+
+    const updated = await prisma.justification.update({
+      where: { id },
+      data: {
+        status: 'rejected',
+        rejectedBy: req.user?.id,
+        rejectedAt: new Date(),
+        rejectionReason: body.data.reason,
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'justification.rejected',
+      'justification',
+      id,
+      justification,
+      updated,
+      { reason: body.data.reason },
+      req
+    );
+
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// AJUSTES DE HORAS
+// ============================================
+
+app.get('/api/timeclock/hour-adjustments', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { employeeId, status, type } = req.query;
+    const where: any = {};
+    if (employeeId) where.employeeId = employeeId as string;
+    if (status) where.status = status as string;
+    if (type) where.type = type as string;
+
+    const adjustments = await prisma.hourAdjustment.findMany({
+      where,
+      include: {
+        employee: {
+          select: { id: true, name: true, employeeCode: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(adjustments);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/hour-adjustments', authMiddleware(), requireRole('admin', 'superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      employeeId: z.string(),
+      type: z.enum(['credit', 'debit', 'compensation']),
+      hours: z.number(),
+      reason: z.string().min(3),
+      description: z.string().optional(),
+      periodStart: z.string().optional(),
+      periodEnd: z.string().optional(),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const data: any = { ...body.data };
+    if (data.periodStart) data.periodStart = new Date(data.periodStart);
+    if (data.periodEnd) data.periodEnd = new Date(data.periodEnd);
+
+    const adjustment = await prisma.hourAdjustment.create({
+      data,
+      include: {
+        employee: {
+          select: { id: true, name: true, employeeCode: true },
+        },
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'hour_adjustment.created',
+      'hour_adjustment',
+      adjustment.id,
+      null,
+      adjustment,
+      { employeeId: body.data.employeeId, type: body.data.type, hours: body.data.hours },
+      req
+    );
+
+    res.json(adjustment);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/hour-adjustments/:id/approve', authMiddleware(), requireRole('admin', 'superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const adjustment = await prisma.hourAdjustment.findUnique({ where: { id } });
+    if (!adjustment) return res.status(404).json({ error: 'Adjustment not found' });
+
+    const updated = await prisma.hourAdjustment.update({
+      where: { id },
+      data: {
+        status: 'approved',
+        approvedBy: req.user?.id,
+        approvedAt: new Date(),
+      },
+    });
+
+    // Atualizar saldo de horas do funcionário
+    const employee = await prisma.employee.findUnique({ where: { id: adjustment.employeeId } });
+    if (employee) {
+      let newBalance = employee.hourBalance;
+      if (adjustment.type === 'credit') {
+        newBalance += adjustment.hours;
+      } else if (adjustment.type === 'debit') {
+        newBalance -= adjustment.hours;
+      }
+
+      await prisma.employee.update({
+        where: { id: adjustment.employeeId },
+        data: { hourBalance: newBalance },
+      });
+    }
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'hour_adjustment.approved',
+      'hour_adjustment',
+      id,
+      adjustment,
+      updated,
+      {},
+      req
+    );
+
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// FERIADOS
+// ============================================
+
+app.get('/api/timeclock/holidays', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    const where: any = {};
+    if (companyId) where.companyId = companyId as string;
+
+    const holidays = await prisma.holiday.findMany({
+      where,
+      include: { company: true },
+      orderBy: { date: 'asc' },
+    });
+    res.json(holidays);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.post('/api/timeclock/holidays', authMiddleware(), requireRole('superadmin'), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({
+      companyId: z.string(),
+      name: z.string().min(2),
+      date: z.string(),
+      type: z.enum(['national', 'state', 'municipal', 'company']).default('national'),
+      state: z.string().optional(),
+      city: z.string().optional(),
+      isRecurring: z.boolean().optional().default(false),
+      isPaid: z.boolean().optional().default(true),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json(body.error);
+
+    const holiday = await prisma.holiday.create({
+      data: {
+        ...body.data,
+        date: new Date(body.data.date),
+      },
+    });
+
+    await createTimeClockAuditLog(
+      req.user?.id,
+      'holiday.created',
+      'holiday',
+      holiday.id,
+      null,
+      holiday,
+      { name: holiday.name, companyId: holiday.companyId },
+      req
+    );
+
+    res.json(holiday);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// RELATÓRIOS
+// ============================================
+
+app.get('/api/timeclock/reports', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { employeeId, branchId, departmentId, startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+
+    const where: any = {
+      timestamp: {
+        gte: new Date(startDate as string),
+        lte: new Date(endDate as string),
+      },
+    };
+    if (employeeId) where.employeeId = employeeId as string;
+    if (branchId) where.branchId = branchId as string;
+
+    // Buscar funcionários
+    const employeeWhere: any = {};
+    if (departmentId) employeeWhere.departmentId = departmentId as string;
+    if (branchId) employeeWhere.branchId = branchId as string;
+
+    const employees = await prisma.employee.findMany({
+      where: employeeWhere,
+      include: {
+        timeClocks: {
+          where,
+          orderBy: { timestamp: 'asc' },
+        },
+        workSchedule: true,
+      },
+    });
+
+    const reports = employees.map((employee) => {
+      const records = employee.timeClocks;
+      let totalHours = 0;
+      let regularHours = 0;
+      let overtimeHours = 0;
+      let delays = 0;
+      let absences = 0;
+
+      // Processar registros para calcular horas
+      // (lógica simplificada - em produção, considerar jornada de trabalho)
+      for (let i = 0; i < records.length; i += 2) {
+        if (records[i] && records[i + 1]) {
+          const entry = records[i];
+          const exit = records[i + 1];
+          if (entry.type === 'entry' && exit.type === 'exit') {
+            const hours = (new Date(exit.timestamp).getTime() - new Date(entry.timestamp).getTime()) / (1000 * 60 * 60);
+            totalHours += hours;
+            if (hours <= (employee.workHours || 8)) {
+              regularHours += hours;
+            } else {
+              regularHours += employee.workHours || 8;
+              overtimeHours += hours - (employee.workHours || 8);
+            }
+          }
+        }
+      }
+
+      return {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        period: {
+          start: startDate,
+          end: endDate,
+        },
+        totalHours,
+        regularHours,
+        overtimeHours,
+        delays,
+        absences,
+        records,
+      };
+    });
+
+    res.json(reports);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+// ============================================
+// EXPORTAÇÃO
+// ============================================
+
+app.get('/api/timeclock/export/pdf', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    // Em produção, usar biblioteca como pdfkit ou puppeteer
+    // Por enquanto, retornar JSON
+    const { employeeId, branchId, departmentId, startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+
+    // Buscar dados diretamente do Prisma (mesma lógica do endpoint de reports)
+    const where: any = {
+      timestamp: {
+        gte: new Date(startDate as string),
+        lte: new Date(endDate as string),
+      },
+    };
+    if (employeeId) where.employeeId = employeeId as string;
+    if (branchId) where.branchId = branchId as string;
+
+    const employeeWhere: any = {};
+    if (departmentId) employeeWhere.departmentId = departmentId as string;
+    if (branchId) employeeWhere.branchId = branchId as string;
+
+    const employees = await prisma.employee.findMany({
+      where: employeeWhere,
+      include: {
+        timeClocks: {
+          where,
+          orderBy: { timestamp: 'asc' },
+        },
+        workSchedule: true,
+      },
+    });
+
+    const reports = employees.map((employee) => {
+      const records = employee.timeClocks;
+      let totalHours = 0;
+      let regularHours = 0;
+      let overtimeHours = 0;
+      let delays = 0;
+      let absences = 0;
+
+      for (let i = 0; i < records.length; i += 2) {
+        if (records[i] && records[i + 1]) {
+          const entry = records[i];
+          const exit = records[i + 1];
+          if (entry.type === 'entry' && exit.type === 'exit') {
+            const hours = (new Date(exit.timestamp).getTime() - new Date(entry.timestamp).getTime()) / (1000 * 60 * 60);
+            totalHours += hours;
+            if (hours <= (employee.workHours || 8)) {
+              regularHours += hours;
+            } else {
+              regularHours += employee.workHours || 8;
+              overtimeHours += hours - (employee.workHours || 8);
+            }
+          }
+        }
+      }
+
+      return {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        period: { start: startDate, end: endDate },
+        totalHours,
+        regularHours,
+        overtimeHours,
+        delays,
+        absences,
+        records,
+      };
+    });
+
+    // Por enquanto, retornar JSON (em produção, gerar PDF real)
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="relatorio-ponto-${Date.now()}.json"`);
+    res.json(reports);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.get('/api/timeclock/export/excel', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { employeeId, branchId, departmentId, startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+
+    // Em produção, usar biblioteca como exceljs
+    // Por enquanto, retornar CSV
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="relatorio-ponto-${Date.now()}.csv"`);
+    res.send('Funcionário,Data,Entrada,Saída,Horas\n'); // Placeholder
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.get('/api/timeclock/export/csv', authMiddleware(), requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { employeeId, branchId, departmentId, startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+
+    // Buscar dados diretamente do Prisma
+    const where: any = {
+      timestamp: {
+        gte: new Date(startDate as string),
+        lte: new Date(endDate as string),
+      },
+    };
+    if (employeeId) where.employeeId = employeeId as string;
+    if (branchId) where.branchId = branchId as string;
+
+    const employeeWhere: any = {};
+    if (departmentId) employeeWhere.departmentId = departmentId as string;
+    if (branchId) employeeWhere.branchId = branchId as string;
+
+    const employees = await prisma.employee.findMany({
+      where: employeeWhere,
+      include: {
+        timeClocks: {
+          where,
+          orderBy: { timestamp: 'asc' },
+        },
+        workSchedule: true,
+      },
+    });
+
+    const reports = employees.map((employee) => {
+      const records = employee.timeClocks;
+      let totalHours = 0;
+      let regularHours = 0;
+      let overtimeHours = 0;
+      let delays = 0;
+      let absences = 0;
+
+      for (let i = 0; i < records.length; i += 2) {
+        if (records[i] && records[i + 1]) {
+          const entry = records[i];
+          const exit = records[i + 1];
+          if (entry.type === 'entry' && exit.type === 'exit') {
+            const hours = (new Date(exit.timestamp).getTime() - new Date(entry.timestamp).getTime()) / (1000 * 60 * 60);
+            totalHours += hours;
+            if (hours <= (employee.workHours || 8)) {
+              regularHours += hours;
+            } else {
+              regularHours += employee.workHours || 8;
+              overtimeHours += hours - (employee.workHours || 8);
+            }
+          }
+        }
+      }
+
+      return {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        period: { start: startDate, end: endDate },
+        totalHours,
+        regularHours,
+        overtimeHours,
+        delays,
+        absences,
+        records,
+      };
+    });
+
+    // Gerar CSV
+    let csv = 'Funcionário,Data,Entrada,Saída,Horas Trabalhadas,Horas Extras,Atrasos\n';
+    for (const report of reports) {
+      csv += `${report.employeeName},${report.period.start} a ${report.period.end},,,${report.totalHours},${report.overtimeHours},${report.delays}\n`;
+    }
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="relatorio-ponto-${Date.now()}.csv"`);
+    res.send(csv);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
 // CORS já foi configurado no início do arquivo
 
 // Middleware de validação de entrada

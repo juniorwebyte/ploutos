@@ -69,6 +69,15 @@ export function printCashFlow(data: CashFlowData, reduced: boolean = false, incl
     ? data.entries.taxas.reduce((sum, taxa) => sum + (Number(taxa.valor) || 0), 0)
     : 0;
 
+  // Calcular totais de lançamentos
+  const totalOutrosLancamentos = Array.isArray(data.entries.outrosLancamentos) && data.entries.outrosLancamentos.length > 0
+    ? data.entries.outrosLancamentos.reduce((sum, l) => sum + (Number(l.valor) || 0), 0)
+    : (data.entries.outros || 0);
+  
+  const totalBrindesLancamentos = Array.isArray(data.entries.brindesLancamentos) && data.entries.brindesLancamentos.length > 0
+    ? data.entries.brindesLancamentos.reduce((sum, l) => sum + (Number(l.valor) || 0), 0)
+    : (data.entries.brindes || 0);
+
   const totalEntradas = 
     data.entries.dinheiro + 
     data.entries.fundoCaixa + 
@@ -77,7 +86,11 @@ export function printCashFlow(data: CashFlowData, reduced: boolean = false, incl
     data.entries.boletos +
     data.entries.pixMaquininha + 
     data.entries.pixConta +
-    (data.entries.outros || 0) +
+    totalOutrosLancamentos +
+    totalBrindesLancamentos +
+    (data.entries.crediario || 0) +
+    (data.entries.cartaoPresente || 0) +
+    (data.entries.cashBack || 0) +
     totalDevolucoes +
     valesImpactoEntrada +
     totalCheques +
@@ -276,8 +289,54 @@ function generateFullHTML(data: CashFlowData, totalEntradas: number, totalSaidas
           ${data.entries.pixContaClientes.map(c => `<div class="row-desc"><span>${c.nome}:</span><span>${formatCurrency(c.valor)}</span></div>`).join('')}
         </div>`
       : ''}
-    ${data.entries.outros && data.entries.outros > 0 ? `<div class="row"><span>Outros:</span><span>${formatCurrency(data.entries.outros)}</span></div>` : ''}
-    ${data.entries.outros && data.entries.outros > 0 && data.entries.outrosDescricao ? `<div class="row-desc"><span>Descrição:</span><span>${data.entries.outrosDescricao}</span></div>` : ''}
+    ${(() => {
+      const totalOutros = Array.isArray(data.entries.outrosLancamentos) && data.entries.outrosLancamentos.length > 0
+        ? data.entries.outrosLancamentos.reduce((sum, l) => sum + (Number(l.valor) || 0), 0)
+        : (data.entries.outros || 0);
+      if (totalOutros > 0) {
+        let html = `<div class="row"><span>Outros:</span><span>${formatCurrency(totalOutros)}</span></div>`;
+        if (Array.isArray(data.entries.outrosLancamentos) && data.entries.outrosLancamentos.length > 0) {
+          html += `<div>${data.entries.outrosLancamentos.map(l => `<div class="row-desc"><span>${l.descricao}:</span><span>${formatCurrency(l.valor)}</span></div>`).join('')}</div>`;
+        } else if (data.entries.outrosDescricao) {
+          html += `<div class="row-desc"><span>Descrição:</span><span>${data.entries.outrosDescricao}</span></div>`;
+        }
+        return html;
+      }
+      return '';
+    })()}
+    ${(() => {
+      const totalBrindes = Array.isArray(data.entries.brindesLancamentos) && data.entries.brindesLancamentos.length > 0
+        ? data.entries.brindesLancamentos.reduce((sum, l) => sum + (Number(l.valor) || 0), 0)
+        : (data.entries.brindes || 0);
+      if (totalBrindes > 0) {
+        let html = `<div class="row"><span>Brindes:</span><span>${formatCurrency(totalBrindes)}</span></div>`;
+        if (Array.isArray(data.entries.brindesLancamentos) && data.entries.brindesLancamentos.length > 0) {
+          html += `<div>${data.entries.brindesLancamentos.map(l => `<div class="row-desc"><span>${l.descricao}:</span><span>${formatCurrency(l.valor)}</span></div>`).join('')}</div>`;
+        } else if (data.entries.brindesDescricao) {
+          html += `<div class="row-desc"><span>Descrição:</span><span>${data.entries.brindesDescricao}</span></div>`;
+        }
+        return html;
+      }
+      return '';
+    })()}
+    ${data.entries.crediario && data.entries.crediario > 0 ? `<div class="row"><span>Crediário:</span><span>${formatCurrency(data.entries.crediario)}</span></div>` : ''}
+    ${Array.isArray(data.entries.crediarioClientes) && data.entries.crediarioClientes.length > 0
+      ? `<div>
+          ${data.entries.crediarioClientes.map(c => `<div class="row-desc"><span>${c.nome}:</span><span>${formatCurrency(c.valor)} (${c.parcelas}x)</span></div>`).join('')}
+        </div>`
+      : ''}
+    ${data.entries.cartaoPresente && data.entries.cartaoPresente > 0 ? `<div class="row"><span>Cartão Presente:</span><span>${formatCurrency(data.entries.cartaoPresente)}</span></div>` : ''}
+    ${Array.isArray(data.entries.cartaoPresenteClientes) && data.entries.cartaoPresenteClientes.length > 0
+      ? `<div>
+          ${data.entries.cartaoPresenteClientes.map(c => `<div class="row-desc"><span>${c.nome}:</span><span>${formatCurrency(c.valor)} (${c.parcelas}x)</span></div>`).join('')}
+        </div>`
+      : ''}
+    ${data.entries.cashBack && data.entries.cashBack > 0 ? `<div class="row"><span>Cash Back:</span><span>${formatCurrency(data.entries.cashBack)}</span></div>` : ''}
+    ${Array.isArray(data.entries.cashBackClientes) && data.entries.cashBackClientes.length > 0
+      ? `<div>
+          ${data.entries.cashBackClientes.map(c => `<div class="row-desc"><span>${c.nome} (CPF: ${c.cpf}):</span><span>${formatCurrency(c.valor)}</span></div>`).join('')}
+        </div>`
+      : ''}
     ${totalCheques > 0 ? `<div class="row"><span>Cheques:</span><span>${formatCurrency(totalCheques)}</span></div>` : ''}
     ${Array.isArray(data.entries.cheques) && data.entries.cheques.length > 0
       ? `<div>

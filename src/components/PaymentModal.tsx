@@ -7,6 +7,7 @@ import backendService from '../services/backendService';
 import { useAuth } from '../contexts/AuthContext';
 import { PixCobranca } from '../types';
 import { formatPhone, unformatPhone } from '../utils/formatters';
+import { validatePhone, formatPhone as formatPhoneValidation } from '../services/validationService';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -213,7 +214,7 @@ Por favor, confirme o recebimento e envie as instruções de acesso.`;
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100] p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[999999] p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full relative overflow-hidden">
         {/* Header Compacto */}
         <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4 relative">
@@ -392,18 +393,37 @@ Por favor, confirme o recebimento e envie as instruções de acesso.`;
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="E-mail *"
                 />
-                <input
-                  type="tel"
-                  required
-                  value={formatPhone(formData.phone)}
-                  onChange={(e) => {
-                    const unformatted = unformatPhone(e.target.value);
-                    setFormData({ ...formData, phone: unformatted });
-                  }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Telefone *"
-                  maxLength={15}
-                />
+                <div>
+                  <input
+                    type="tel"
+                    required
+                    value={formatPhone(formData.phone)}
+                    onChange={(e) => {
+                      const formatted = formatPhoneValidation(e.target.value);
+                      const unformatted = unformatPhone(formatted);
+                      setFormData({ ...formData, phone: unformatted });
+                      if (unformatted.length >= 10) {
+                        const isValid = validatePhone(formatted);
+                        setValidations(prev => ({
+                          ...prev,
+                          phone: { isValid, message: isValid ? '' : 'Telefone inválido' },
+                        }));
+                      } else {
+                        setValidations(prev => ({ ...prev, phone: { isValid: true, message: '' } }));
+                      }
+                    }}
+                    className={`px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+                      formData.phone && !validations.phone.isValid ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    placeholder="Telefone *"
+                    maxLength={15}
+                  />
+                  {formData.phone && (
+                    <span className={`ml-2 text-xs ${validations.phone.isValid ? 'text-green-600' : 'text-red-600'}`}>
+                      {validations.phone.isValid ? '✓' : '✗'}
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={formData.company}

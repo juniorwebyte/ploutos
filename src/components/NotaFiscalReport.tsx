@@ -344,9 +344,18 @@ export default function NotaFiscalReport({ nota, onClose }: NotaFiscalReportProp
           )}
 
           {/* Footer */}
-          <div className="text-center text-sm text-gray-500 print:text-xs">
+          <div className="text-center text-sm text-gray-500 print:text-xs mt-8 pt-6 border-t border-gray-200">
+            <img 
+              src="/logo_header.png" 
+              alt="PloutosLedger" 
+              className="max-w-[150px] mx-auto mb-4 print:max-w-[120px] print:mb-2"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
             <p>Documento gerado automaticamente pelo sistema PloutosLedger</p>
             <p>Data de geração: {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR')}</p>
+            <p className="mt-2">© 2025 Webyte Desenvolvimentos. Todos os direitos reservados.</p>
           </div>
         </div>
 

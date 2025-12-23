@@ -1,92 +1,140 @@
-// Serviço para consulta de CNPJ via API pública
-export interface EmpresaData {
+/**
+ * Serviço de Consulta de CNPJ
+ * Busca dados da empresa pelo CNPJ usando API pública
+ */
+
+import axios from 'axios';
+
+export interface CNPJData {
   cnpj: string;
-  razaoSocial: string;
-  nomeFantasia: string;
-  situacao: string;
-  logradouro: string;
-  numero: string;
-  complemento: string;
-  bairro: string;
-  municipio: string;
-  uf: string;
-  cep: string;
-  telefone: string;
-  email: string;
-  capitalSocial?: number;
-  dataAbertura?: string;
-  naturezaJuridica?: string;
+  razao_social?: string;
+  nome_fantasia?: string;
+  situacao?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  municipio?: string;
+  uf?: string;
+  cep?: string;
+  telefone?: string;
+  email?: string;
+  capital_social?: number;
+  data_abertura?: string;
+  natureza_juridica?: string;
+  porte?: string;
 }
 
 class CNPJService {
-  // API pública gratuita para consulta de CNPJ
   private baseUrl = 'https://www.receitaws.com.br/v1';
+  private alternativeUrl = 'https://brasilapi.com.br/api/cnpj/v1';
 
-  /**
-   * Consulta dados da empresa pelo CNPJ
-   */
-  async consultarCNPJ(cnpj: string): Promise<EmpresaData | null> {
+  async consultarCNPJ(cnpj: string): Promise<CNPJData | null> {
     try {
-      // Remove formatação do CNPJ
-      const cleanCnpj = cnpj.replace(/\D/g, '');
-
-      // Valida se tem 14 dígitos
-      if (cleanCnpj.length !== 14) {
+      const cleanCNPJ = cnpj.replace(/\D/g, '');
+      if (cleanCNPJ.length !== 14) {
+        console.warn('CNPJ deve ter 14 dígitos:', cleanCNPJ);
         return null;
       }
 
-      // Consulta na API ReceitaWS (gratuita, sem necessidade de autenticação)
-      const response = await fetch(`${this.baseUrl}/${cleanCnpj}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
+      console.log('🔍 Buscando CNPJ:', cleanCNPJ);
 
-      if (!response.ok) {
-        throw new Error('Erro ao consultar CNPJ');
+      // Tentar primeiro com ReceitaWS
+      try {
+        const response = await axios.get<any>(`${this.baseUrl}/${cleanCNPJ}`, {
+          timeout: 15000,
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+
+        console.log('📦 Resposta da ReceitaWS:', response.data);
+
+        // Verificar se há erro na resposta
+        if (response.data.status === 'ERROR' || response.data.situacao === 'ERROR' || !response.data.cnpj) {
+          console.warn('CNPJ não encontrado na ReceitaWS, tentando API alternativa...');
+          throw new Error('CNPJ não encontrado');
+        }
+
+        // Mapear dados da API para nosso formato
+        const data: CNPJData = {
+          cnpj: response.data.cnpj || cleanCNPJ,
+          razao_social: response.data.nome || response.data.razao_social || '',
+          nome_fantasia: response.data.fantasia || response.data.nome_fantasia || '',
+          situacao: response.data.situacao || response.data.status || '',
+          logradouro: response.data.logradouro || '',
+          numero: response.data.numero || '',
+          complemento: response.data.complemento || '',
+          bairro: response.data.bairro || '',
+          municipio: response.data.municipio || response.data.cidade || '',
+          uf: response.data.uf || response.data.estado || '',
+          cep: response.data.cep ? response.data.cep.replace(/\D/g, '') : '',
+          telefone: response.data.telefone || response.data.phone || '',
+          email: response.data.email || '',
+          capital_social: response.data.capital_social || 0,
+          data_abertura: response.data.abertura || response.data.data_abertura || '',
+          natureza_juridica: response.data.natureza_juridica || '',
+          porte: response.data.porte || '',
+        };
+
+        console.log('✅ Dados mapeados da ReceitaWS:', data);
+        return data;
+      } catch (primaryError: any) {
+        console.warn('⚠️ Erro na ReceitaWS, tentando BrasilAPI...', primaryError.message);
+        
+        // Tentar API alternativa (BrasilAPI)
+        try {
+          const response = await axios.get<any>(`${this.alternativeUrl}/${cleanCNPJ}`, {
+            timeout: 15000,
+            headers: {
+              'Accept': 'application/json',
+            },
+          });
+
+          console.log('📦 Resposta da BrasilAPI:', response.data);
+
+          if (!response.data || response.data.cnpj !== cleanCNPJ) {
+            console.warn('CNPJ não encontrado na BrasilAPI');
+            return null;
+          }
+
+          // Mapear dados da BrasilAPI para nosso formato
+          const data: CNPJData = {
+            cnpj: response.data.cnpj || cleanCNPJ,
+            razao_social: response.data.razao_social || response.data.nome || '',
+            nome_fantasia: response.data.nome_fantasia || response.data.fantasia || '',
+            situacao: response.data.descricao_situacao_cadastral || '',
+            logradouro: response.data.logradouro || '',
+            numero: response.data.numero || '',
+            complemento: response.data.complemento || '',
+            bairro: response.data.bairro || '',
+            municipio: response.data.municipio || '',
+            uf: response.data.uf || '',
+            cep: response.data.cep ? response.data.cep.replace(/\D/g, '') : '',
+            telefone: response.data.ddd_telefone_1 || response.data.telefone || '',
+            email: response.data.email || '',
+            capital_social: response.data.capital_social || 0,
+            data_abertura: response.data.data_inicio_atividade || '',
+            natureza_juridica: response.data.natureza_juridica || '',
+            porte: response.data.porte || '',
+          };
+
+          console.log('✅ Dados mapeados da BrasilAPI:', data);
+          return data;
+        } catch (alternativeError: any) {
+          console.error('❌ Erro na BrasilAPI:', alternativeError);
+          throw alternativeError;
+        }
       }
-
-      const data = await response.json();
-
-      // Verifica se a consulta foi bem-sucedida
-      if (data.status === 'ERROR') {
-        throw new Error(data.message || 'CNPJ não encontrado');
-      }
-
-      // Mapeia os dados da API para nosso formato
-      return {
-        cnpj: data.cnpj || cleanCnpj,
-        razaoSocial: data.nome || '',
-        nomeFantasia: data.fantasia || data.nome || '',
-        situacao: data.situacao || '',
-        logradouro: data.logradouro || '',
-        numero: data.numero || '',
-        complemento: data.complemento || '',
-        bairro: data.bairro || '',
-        municipio: data.municipio || '',
-        uf: data.uf || '',
-        cep: data.cep || '',
-        telefone: data.telefone || '',
-        email: data.email || '',
-        capitalSocial: data.capital_social ? parseFloat(data.capital_social) : undefined,
-        dataAbertura: data.abertura || '',
-        naturezaJuridica: data.natureza_juridica || '',
-      };
     } catch (error: any) {
-      // Erro ao consultar CNPJ
-      throw new Error(error.message || 'Erro ao consultar CNPJ. Tente novamente.');
+      console.error('❌ Erro ao consultar CNPJ:', error);
+      if (error.response) {
+        console.error('Status:', error.response.status);
+        console.error('Data:', error.response.data);
+      }
+      return null;
     }
-  }
-
-  /**
-   * Valida formato de CNPJ
-   */
-  validarCNPJ(cnpj: string): boolean {
-    const cleanCnpj = cnpj.replace(/\D/g, '');
-    return cleanCnpj.length === 14;
   }
 }
 
-export default new CNPJService();
-
+export const cnpjService = new CNPJService();

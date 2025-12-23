@@ -234,7 +234,7 @@ class PDVIntegrationService {
     }
   }
 
-  // Converter vendas do PDV para formato de entradas do CashFlow
+  // Converter vendas do PDV para formato de entradas do CashFlow (com cálculos precisos)
   convertSalesToEntries(sales: PDVSale[]): {
     dinheiro: number;
     cartao: number;
@@ -244,6 +244,16 @@ class PDVIntegrationService {
     boletos: number;
     cheque: number;
   } {
+    // Importar função de precisão
+    const preciseCurrency = {
+      toCents: (value: number): number => Math.round(value * 100),
+      fromCents: (cents: number): number => cents / 100,
+      add: (...values: number[]): number => {
+        const totalCents = values.reduce((sum, val) => sum + Math.round((val || 0) * 100), 0);
+        return totalCents / 100;
+      }
+    };
+
     const entries = {
       dinheiro: 0,
       cartao: 0,
@@ -258,12 +268,12 @@ class PDVIntegrationService {
       const value = sale.total;
       const method = sale.paymentMethod?.toLowerCase() || '';
       
-      // Mapear métodos de pagamento do PDV para campos do CashFlow
+      // Mapear métodos de pagamento do PDV para campos do CashFlow com precisão
       switch (method) {
         case 'dinheiro':
         case 'cash':
         case 'money':
-          entries.dinheiro += value;
+          entries.dinheiro = preciseCurrency.add(entries.dinheiro, value);
           break;
         
         case 'cartao':
@@ -273,57 +283,57 @@ class PDVIntegrationService {
         case 'crédito':
         case 'debito':
         case 'débito':
-          entries.cartao += value;
+          entries.cartao = preciseCurrency.add(entries.cartao, value);
           break;
         
         case 'cartaolink':
         case 'cartao_link':
         case 'cartão_link':
         case 'cardlink':
-          entries.cartaoLink += value;
+          entries.cartaoLink = preciseCurrency.add(entries.cartaoLink, value);
           break;
         
         case 'pix':
         case 'pixmaquininha':
         case 'pix_maquininha':
           // PIX via maquininha (padrão quando não especificado)
-          entries.pixMaquininha += value;
+          entries.pixMaquininha = preciseCurrency.add(entries.pixMaquininha, value);
           break;
         
         case 'pixconta':
         case 'pix_conta':
           // PIX direto na conta
-          entries.pixConta += value;
+          entries.pixConta = preciseCurrency.add(entries.pixConta, value);
           break;
         
         case 'boleto':
         case 'boletos':
         case 'bank_slip':
-          entries.boletos += value;
+          entries.boletos = preciseCurrency.add(entries.boletos, value);
           break;
         
         case 'cheque':
         case 'check':
-          entries.cheque += value;
+          entries.cheque = preciseCurrency.add(entries.cheque, value);
           break;
         
         default:
           // Se não reconhecer, tentar inferir pelo nome
           if (method.includes('pix')) {
             if (method.includes('conta') || method.includes('account')) {
-              entries.pixConta += value;
+              entries.pixConta = preciseCurrency.add(entries.pixConta, value);
             } else {
-              entries.pixMaquininha += value;
+              entries.pixMaquininha = preciseCurrency.add(entries.pixMaquininha, value);
             }
           } else if (method.includes('cartao') || method.includes('card')) {
             if (method.includes('link')) {
-              entries.cartaoLink += value;
+              entries.cartaoLink = preciseCurrency.add(entries.cartaoLink, value);
             } else {
-              entries.cartao += value;
+              entries.cartao = preciseCurrency.add(entries.cartao, value);
             }
           } else {
             // Fallback: se não reconhecer, adiciona como dinheiro (com aviso)
-            entries.dinheiro += value;
+            entries.dinheiro = preciseCurrency.add(entries.dinheiro, value);
           }
           break;
       }

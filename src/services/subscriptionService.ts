@@ -1,256 +1,375 @@
-// Serviço Avançado de Gestão de Assinaturas
-import axios from 'axios';
+/**
+ * Serviço de Gerenciamento de Assinaturas
+ * Controla acesso aos módulos baseado em assinaturas ativas
+ */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin.replace(/:\d+$/, ':4000') : 'http://localhost:4000');
-
-export interface SubscriptionRecord {
-  id: string;
-  userId: string;
-  planId: string;
-  planName: string;
-  status: 'active' | 'expired' | 'canceled' | 'expiring_soon' | 'past_due' | 'trialing';
-  startedAt: Date;
-  expiresAt: Date | null;
-  validUntil: Date | null;
-  autoRenew: boolean;
-  lastNotificationAt: Date | null;
-  txid?: string;
-}
-
-export interface PlanRecord {
+export interface Plan {
   id: string;
   name: string;
-  priceCents: number;
+  modules: string[]; // Módulos liberados: ['timeclock', 'caderno', 'caixa']
+  maxEmployees?: number; // Limite de funcionários
+  maxCompanies?: number; // Limite de empresas
+  features: {
+    [key: string]: any; // Features específicas do plano
+  };
+  price: number;
   interval: 'monthly' | 'yearly';
-  features?: string;
+  isActive: boolean;
 }
 
-export interface PaymentRecord {
+export interface Subscription {
   id: string;
-  userId: string;
-  subscriptionId?: string;
-  amountCents: number;
-  currency: string;
-  method: string;
-  status: 'pending' | 'paid' | 'failed' | 'refunded';
-  txid?: string;
-  pixQrCode?: string;
-  pixCopyPaste?: string;
-  paymentLink?: string;
-  paidAt?: Date;
-  expiresAt?: Date;
+  companyId: string;
+  planId: string;
+  status: 'active' | 'expired' | 'blocked' | 'trial' | 'cancelled';
+  startDate: Date;
+  endDate: Date;
+  trialEndsAt?: Date;
+  cancelledAt?: Date;
   createdAt: Date;
+  updatedAt: Date;
+  plan?: Plan;
+}
+
+export interface ModulePermission {
+  companyId: string;
+  module: string; // 'timeclock', 'caderno', 'caixa'
+  enabled: boolean;
+  enabledBy?: string; // ID do Super Admin que habilitou
+  enabledAt?: Date;
+  reason?: string;
 }
 
 class SubscriptionService {
-  private subscriptions: SubscriptionRecord[] = [];
-  private listeners: Set<(subs: SubscriptionRecord[]) => void> = new Set();
+  private subscriptions: Map<string, Subscription> = new Map();
+  private plans: Map<string, Plan> = new Map();
+  private permissions: Map<string, ModulePermission> = new Map();
 
   constructor() {
-    this.loadSubscriptions();
+    this.loadData();
+    this.initializeDefaultPlans();
   }
 
-  private loadSubscriptions() {
-    try {
-      const stored = localStorage.getItem('ploutos_subscriptions');
-      if (stored) {
-        this.subscriptions = JSON.parse(stored).map((s: any) => ({
-          ...s,
-          startedAt: new Date(s.startedAt),
-          expiresAt: s.expiresAt ? new Date(s.expiresAt) : null,
-          validUntil: s.validUntil ? new Date(s.validUntil) : null,
-          lastNotificationAt: s.lastNotificationAt ? new Date(s.lastNotificationAt) : null,
-        }));
-      }
-    } catch (error) {
-      // Erro ao carregar assinaturas - retornar array vazio
-    }
-  }
-
-  private saveSubscriptions() {
-    localStorage.setItem('ploutos_subscriptions', JSON.stringify(this.subscriptions));
-    this.notifyListeners();
-  }
-
-  private notifyListeners() {
-    this.listeners.forEach(listener => listener([...this.subscriptions]));
-  }
-
-  subscribe(listener: (subs: SubscriptionRecord[]) => void): () => void {
-    this.listeners.add(listener);
-    listener([...this.subscriptions]);
-    return () => this.listeners.delete(listener);
-  }
-
-  // Buscar assinaturas do usuário atual
-  async getUserSubscriptions(userId: string): Promise<SubscriptionRecord[]> {
-    try {
-      const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`${API_BASE}/api/subscriptions/user/${userId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      return response.data.map((s: any) => ({
-        ...s,
-        startedAt: new Date(s.startedAt),
-        expiresAt: s.expiresAt ? new Date(s.expiresAt) : null,
-        validUntil: s.validUntil ? new Date(s.validUntil) : null,
-        lastNotificationAt: s.lastNotificationAt ? new Date(s.lastNotificationAt) : null,
-      }));
-    } catch (error) {
-      // Erro ao buscar assinaturas - retornar array vazio
-      return this.subscriptions.filter(s => s.userId === userId);
-    }
-  }
-
-  // Criar nova assinatura
-  async createSubscription(
-    userId: string,
-    planId: string,
-    planName: string,
-    interval: 'monthly' | 'yearly'
-  ): Promise<SubscriptionRecord> {
-    try {
-      const token = localStorage.getItem('auth_token');
-      const response = await axios.post(
-        `${API_BASE}/api/subscriptions`,
-        { userId, planId, planName, interval },
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-      );
-      const subscription = {
-        ...response.data,
-        startedAt: new Date(response.data.startedAt),
-        expiresAt: response.data.expiresAt ? new Date(response.data.expiresAt) : null,
-        validUntil: response.data.validUntil ? new Date(response.data.validUntil) : null,
-        lastNotificationAt: response.data.lastNotificationAt ? new Date(response.data.lastNotificationAt) : null,
-      };
-      this.subscriptions.push(subscription);
-      this.saveSubscriptions();
-      return subscription;
-    } catch (error) {
-      // Erro ao criar assinatura
-      throw error;
-    }
-  }
-
-  // Renovar assinatura
-  async renewSubscription(subscriptionId: string, licenseKey: string): Promise<SubscriptionRecord> {
-    try {
-      const token = localStorage.getItem('auth_token');
-      const response = await axios.post(
-        `${API_BASE}/api/subscriptions/${subscriptionId}/renew`,
-        { licenseKey },
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-      );
-      const updated = {
-        ...response.data,
-        startedAt: new Date(response.data.startedAt),
-        expiresAt: response.data.expiresAt ? new Date(response.data.expiresAt) : null,
-        validUntil: response.data.validUntil ? new Date(response.data.validUntil) : null,
-        lastNotificationAt: response.data.lastNotificationAt ? new Date(response.data.lastNotificationAt) : null,
-      };
-      const index = this.subscriptions.findIndex(s => s.id === subscriptionId);
-      if (index !== -1) {
-        this.subscriptions[index] = updated;
-      } else {
-        this.subscriptions.push(updated);
-      }
-      this.saveSubscriptions();
-      return updated;
-    } catch (error) {
-      // Erro ao renovar assinatura
-      throw error;
-    }
-  }
-
-  // Validar licença em tempo real - USANDO SERVIÇO CENTRALIZADO
-  async validateLicenseKey(licenseKey: string, source: 'landing_page' | 'client_dashboard' | 'api' = 'api', userInfo?: { username?: string; email?: string }): Promise<{
-    valid: boolean;
-    subscription?: SubscriptionRecord;
-    message?: string;
+  /**
+   * Verificar se uma empresa tem acesso a um módulo
+   */
+  async hasAccess(companyId: string, module: string): Promise<{
+    hasAccess: boolean;
+    reason?: string;
+    subscription?: Subscription;
+    plan?: Plan;
   }> {
-    // Usar serviço centralizado de validação
-    const licenseValidationService = await import('./licenseValidationService');
-    const result = licenseValidationService.default.validateLicense(licenseKey, source, userInfo);
-    
-    if (result.valid && result.license) {
-      // Converter para formato de subscription se necessário
+    // Verificar permissão explícita (Super Admin pode forçar)
+    const permission = this.permissions.get(`${companyId}_${module}`);
+    if (permission && permission.enabled) {
       return {
-        valid: true,
-        message: result.message || 'Licença válida',
-        subscription: {
-          id: result.license.id,
-          userId: result.license.userId,
-          planId: result.license.planId || 'trial',
-          planName: result.license.planName || 'Trial 30 Dias',
-          status: result.license.status === 'trial' ? 'trialing' : 'active',
-          startedAt: new Date(result.license.createdAt || Date.now()),
-          expiresAt: result.license.validUntil ? new Date(result.license.validUntil) : null,
-          validUntil: result.license.validUntil ? new Date(result.license.validUntil) : null,
-          autoRenew: false,
-          lastNotificationAt: null
-        } as SubscriptionRecord
+        hasAccess: true,
+        reason: 'Manualmente habilitado pelo Super Admin',
+        subscription: undefined,
+        plan: undefined,
       };
     }
-    
+
+    // Verificar assinatura ativa
+    const subscription = this.subscriptions.get(companyId);
+    if (!subscription) {
+      return {
+        hasAccess: false,
+        reason: 'Nenhuma assinatura encontrada',
+      };
+    }
+
+    // Verificar status da assinatura
+    if (subscription.status !== 'active' && subscription.status !== 'trial') {
+      return {
+        hasAccess: false,
+        reason: `Assinatura ${subscription.status}`,
+        subscription,
+      };
+    }
+
+    // Verificar data de validade
+    const now = new Date();
+    if (subscription.endDate < now) {
+      return {
+        hasAccess: false,
+        reason: 'Assinatura expirada',
+        subscription,
+      };
+    }
+
+    // Verificar se o plano inclui o módulo
+    const plan = subscription.plan || this.plans.get(subscription.planId);
+    if (!plan) {
+      return {
+        hasAccess: false,
+        reason: 'Plano não encontrado',
+        subscription,
+      };
+    }
+
+    if (!plan.modules.includes(module)) {
+      return {
+        hasAccess: false,
+        reason: `Módulo ${module} não incluído no plano`,
+        subscription,
+        plan,
+      };
+    }
+
     return {
-      valid: false,
-      message: result.message || result.reason || 'Licença inválida'
+      hasAccess: true,
+      subscription,
+      plan,
     };
   }
 
-  // Verificar se assinatura está expirando
-  checkExpiringSubscriptions(userId: string): SubscriptionRecord[] {
-    const now = new Date();
-    const daysUntilExpiry = 7; // 7 dias antes de expirar
-    const expiryThreshold = new Date(now.getTime() + daysUntilExpiry * 24 * 60 * 60 * 1000);
-
-    return this.subscriptions.filter(sub => {
-      if (sub.userId !== userId) return false;
-      if (sub.status !== 'active') return false;
-      if (!sub.expiresAt) return false;
-      return sub.expiresAt <= expiryThreshold && sub.expiresAt > now;
-    });
+  /**
+   * Verificar se está em modo demo
+   */
+  isDemoMode(): boolean {
+    // Verificar se está no painel demo
+    const path = window.location.pathname;
+    return path.includes('/demo') || path.includes('demo=true');
   }
 
-  // Verificar se assinatura expirou
-  checkExpiredSubscriptions(userId: string): SubscriptionRecord[] {
+  /**
+   * Obter status da assinatura para uma empresa
+   */
+  async getSubscriptionStatus(companyId: string): Promise<{
+    hasSubscription: boolean;
+    subscription?: Subscription;
+    plan?: Plan;
+    isActive: boolean;
+    daysRemaining?: number;
+  }> {
+    const subscription = this.subscriptions.get(companyId);
+    if (!subscription) {
+      return {
+        hasSubscription: false,
+        isActive: false,
+      };
+    }
+
+    const plan = subscription.plan || this.plans.get(subscription.planId);
     const now = new Date();
-    return this.subscriptions.filter(sub => {
-      if (sub.userId !== userId) return false;
-      if (sub.status === 'expired') return true;
-      if (sub.expiresAt && sub.expiresAt <= now && sub.status === 'active') {
-        return true;
-      }
-      return false;
-    });
+    const isActive = subscription.status === 'active' && subscription.endDate >= now;
+    const daysRemaining = isActive
+      ? Math.ceil((subscription.endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
+
+    return {
+      hasSubscription: true,
+      subscription,
+      plan,
+      isActive,
+      daysRemaining,
+    };
   }
 
-  // Atualizar status da assinatura
-  updateSubscriptionStatus(subscriptionId: string, status: SubscriptionRecord['status']): void {
-    const index = this.subscriptions.findIndex(s => s.id === subscriptionId);
-    if (index !== -1) {
-      this.subscriptions[index].status = status;
-      this.saveSubscriptions();
+  /**
+   * Criar assinatura
+   */
+  async createSubscription(
+    companyId: string,
+    planId: string,
+    startDate?: Date
+  ): Promise<Subscription> {
+    const plan = this.plans.get(planId);
+    if (!plan) {
+      throw new Error('Plano não encontrado');
+    }
+
+    const start = startDate || new Date();
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + 1); // Assumindo mensal por padrão
+
+    const subscription: Subscription = {
+      id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      companyId,
+      planId,
+      status: 'active',
+      startDate: start,
+      endDate: end,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      plan,
+    };
+
+    this.subscriptions.set(companyId, subscription);
+    this.saveData();
+
+    return subscription;
+  }
+
+  /**
+   * Habilitar/desabilitar módulo para empresa (Super Admin)
+   */
+  async setModulePermission(
+    companyId: string,
+    module: string,
+    enabled: boolean,
+    enabledBy?: string,
+    reason?: string
+  ): Promise<ModulePermission> {
+    const key = `${companyId}_${module}`;
+    const permission: ModulePermission = {
+      companyId,
+      module,
+      enabled,
+      enabledBy,
+      enabledAt: enabled ? new Date() : undefined,
+      reason,
+    };
+
+    this.permissions.set(key, permission);
+    this.saveData();
+
+    return permission;
+  }
+
+  /**
+   * Obter todos os planos disponíveis
+   */
+  getAvailablePlans(): Plan[] {
+    return Array.from(this.plans.values()).filter(p => p.isActive);
+  }
+
+  /**
+   * Obter assinatura de uma empresa
+   */
+  getSubscription(companyId: string): Subscription | undefined {
+    return this.subscriptions.get(companyId);
+  }
+
+  /**
+   * Inicializar planos padrão
+   */
+  private initializeDefaultPlans() {
+    if (this.plans.size > 0) return;
+
+    const plans: Plan[] = [
+      {
+        id: 'plan_basic',
+        name: 'Básico',
+        modules: ['timeclock'],
+        maxEmployees: 10,
+        features: {
+          timeclock: {
+            biometric: false,
+            reports: true,
+            integrations: false,
+          },
+        },
+        price: 99.90,
+        interval: 'monthly',
+        isActive: true,
+      },
+      {
+        id: 'plan_professional',
+        name: 'Profissional',
+        modules: ['timeclock', 'caderno'],
+        maxEmployees: 50,
+        features: {
+          timeclock: {
+            biometric: true,
+            reports: true,
+            integrations: true,
+          },
+        },
+        price: 299.90,
+        interval: 'monthly',
+        isActive: true,
+      },
+      {
+        id: 'plan_enterprise',
+        name: 'Enterprise',
+        modules: ['timeclock', 'caderno', 'caixa'],
+        maxEmployees: -1, // Ilimitado
+        features: {
+          timeclock: {
+            biometric: true,
+            reports: true,
+            integrations: true,
+            api: true,
+          },
+        },
+        price: 999.90,
+        interval: 'monthly',
+        isActive: true,
+      },
+    ];
+
+    plans.forEach(plan => {
+      this.plans.set(plan.id, plan);
+    });
+
+    this.saveData();
+  }
+
+  private saveData() {
+    try {
+      const subscriptionsData = Array.from(this.subscriptions.entries()).map(([id, sub]) => ({
+        ...sub,
+        startDate: sub.startDate.toISOString(),
+        endDate: sub.endDate.toISOString(),
+        createdAt: sub.createdAt.toISOString(),
+        updatedAt: sub.updatedAt.toISOString(),
+      }));
+      localStorage.setItem('subscriptions', JSON.stringify(subscriptionsData));
+
+      const plansData = Array.from(this.plans.values());
+      localStorage.setItem('plans', JSON.stringify(plansData));
+
+      const permissionsData = Array.from(this.permissions.values()).map(p => ({
+        ...p,
+        enabledAt: p.enabledAt?.toISOString(),
+      }));
+      localStorage.setItem('module_permissions', JSON.stringify(permissionsData));
+    } catch (error) {
+      console.error('Erro ao salvar dados de assinatura:', error);
     }
   }
 
-  // Cancelar assinatura
-  async cancelSubscription(subscriptionId: string): Promise<void> {
+  private loadData() {
     try {
-      const token = localStorage.getItem('auth_token');
-      await axios.post(
-        `${API_BASE}/api/subscriptions/${subscriptionId}/cancel`,
-        {},
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-      );
-      this.updateSubscriptionStatus(subscriptionId, 'canceled');
+      const subscriptionsData = localStorage.getItem('subscriptions');
+      if (subscriptionsData) {
+        const data = JSON.parse(subscriptionsData);
+        data.forEach((sub: any) => {
+          this.subscriptions.set(sub.companyId, {
+            ...sub,
+            startDate: new Date(sub.startDate),
+            endDate: new Date(sub.endDate),
+            createdAt: new Date(sub.createdAt),
+            updatedAt: new Date(sub.updatedAt),
+          });
+        });
+      }
+
+      const plansData = localStorage.getItem('plans');
+      if (plansData) {
+        const data = JSON.parse(plansData);
+        data.forEach((plan: Plan) => {
+          this.plans.set(plan.id, plan);
+        });
+      }
+
+      const permissionsData = localStorage.getItem('module_permissions');
+      if (permissionsData) {
+        const data = JSON.parse(permissionsData);
+        data.forEach((p: any) => {
+          const key = `${p.companyId}_${p.module}`;
+          this.permissions.set(key, {
+            ...p,
+            enabledAt: p.enabledAt ? new Date(p.enabledAt) : undefined,
+          });
+        });
+      }
     } catch (error) {
-      // Erro ao cancelar assinatura
-      throw error;
+      console.error('Erro ao carregar dados de assinatura:', error);
     }
   }
 }
 
 export const subscriptionService = new SubscriptionService();
-export default subscriptionService;
-
