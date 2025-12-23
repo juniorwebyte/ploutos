@@ -39,16 +39,34 @@ if (rootElement) {
     }
   };
 
-  createRoot(rootElement).render(
-    <StrictMode>
-      <ErrorBoundary>
-        <Suspense fallback={<LoadingFallback />}>
-          <App />
-        </Suspense>
-      </ErrorBoundary>
-    </StrictMode>
-  );
+  try {
+    createRoot(rootElement).render(
+      <StrictMode>
+        <ErrorBoundary>
+          <Suspense fallback={<LoadingFallback />}>
+            <App />
+          </Suspense>
+        </ErrorBoundary>
+      </StrictMode>
+    );
 
-  // Remove loading após React carregar
-  setTimeout(removeInlineLoading, 100);
+    // Remove loading após React carregar
+    setTimeout(removeInlineLoading, 100);
+  } catch (error) {
+    console.error('Erro ao inicializar aplicação:', error);
+    // Mostrar erro na tela
+    rootElement.innerHTML = `
+      <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 20px; text-align: center;">
+        <div>
+          <h1 style="font-size: 24px; margin-bottom: 16px;">Erro ao Carregar Aplicação</h1>
+          <p style="margin-bottom: 16px;">${error instanceof Error ? error.message : 'Erro desconhecido'}</p>
+          <button onclick="window.location.reload()" style="padding: 10px 20px; background: white; color: #059669; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">
+            Recarregar Página
+          </button>
+        </div>
+      </div>
+    `;
+  }
+} else {
+  console.error('Elemento root não encontrado!');
 }

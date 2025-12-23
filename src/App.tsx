@@ -10,14 +10,39 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import LicenseModal from './components/LicenseModal';
 import PaymentPage from './components/PaymentPage';
 
-// Lazy load components
-const Login = React.lazy(() => import('./components/Login'));
-const CashFlow = React.lazy(() => import('./components/CashFlow'));
-const LandingPage = React.lazy(() => import('./components/LandingPageNew'));
-const LandingPageModern = React.lazy(() => import('./components/LandingPageModern'));
-const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
-const ClientDashboardModern = React.lazy(() => import('./components/ClientDashboardModern'));
-const SuperAdminDashboardModern = React.lazy(() => import('./components/SuperAdminDashboardModern'));
+// Lazy load components com tratamento de erro
+const lazyWithErrorHandling = (importFn: () => Promise<any>) => {
+  return React.lazy(() => {
+    return importFn().catch((error) => {
+      console.error('Erro ao carregar componente:', error);
+      // Retornar um componente de erro como fallback
+      return {
+        default: () => (
+          <div className="min-h-screen flex items-center justify-center bg-red-50">
+            <div className="text-center p-8">
+              <h2 className="text-2xl font-bold text-red-800 mb-4">Erro ao Carregar Componente</h2>
+              <p className="text-red-600 mb-4">{error.message || 'Erro desconhecido'}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Recarregar Página
+              </button>
+            </div>
+          </div>
+        ),
+      };
+    });
+  });
+};
+
+const Login = lazyWithErrorHandling(() => import('./components/Login'));
+const CashFlow = lazyWithErrorHandling(() => import('./components/CashFlow'));
+const LandingPage = lazyWithErrorHandling(() => import('./components/LandingPageNew'));
+const LandingPageModern = lazyWithErrorHandling(() => import('./components/LandingPageModern'));
+const AdminPanel = lazyWithErrorHandling(() => import('./components/AdminPanel'));
+const ClientDashboardModern = lazyWithErrorHandling(() => import('./components/ClientDashboardModern'));
+const SuperAdminDashboardModern = lazyWithErrorHandling(() => import('./components/SuperAdminDashboardModern'));
 
 // Componente para rota de pagamento
 function PaymentRoute() {

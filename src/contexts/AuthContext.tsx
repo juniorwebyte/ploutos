@@ -30,12 +30,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<string | null>(null);
   const [license, setLicense] = useState<License | null>(null);
-  const [role, setRole] = useState<'user' | 'admin' | 'superadmin'>(() => (localStorage.getItem('caixa_role') as any) || 'user');
+  const [role, setRole] = useState<'user' | 'admin' | 'superadmin'>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return (localStorage.getItem('caixa_role') as any) || 'user';
+      }
+    } catch (e) {
+      console.error('Erro ao acessar localStorage:', e);
+    }
+    return 'user';
+  });
 
   useEffect(() => {
-    // Verificar se há uma sessão ativa no localStorage
-    const savedUser = localStorage.getItem('caixa_user');
-    const lastLogin = localStorage.getItem('caixa_last_login');
+    try {
+      // Verificar se localStorage está disponível
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+      }
+      // Verificar se há uma sessão ativa no localStorage
+      const savedUser = localStorage.getItem('caixa_user');
+      const lastLogin = localStorage.getItem('caixa_last_login');
     
     if (savedUser && lastLogin) {
       const lastLoginTime = new Date(lastLogin).getTime();
@@ -62,14 +76,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             } as any);
           } else {
             // Tentar buscar do licenseService
-            const allLicenses = licenseService.getAllLicenses();
-            const userLicense = allLicenses.find(l => 
-              l.username === savedUser || 
-              l.userId === savedUser
-            );
-            if (userLicense) {
-              setLicense(userLicense as any);
-            } else {
+            try {
+              const allLicenses = licenseService.getAllLicenses();
+              const userLicense = allLicenses.find(l => 
+                l.username === savedUser || 
+                l.userId === savedUser
+              );
+              if (userLicense) {
+                setLicense(userLicense as any);
+              } else {
+                setLicense(null);
+              }
+            } catch (licenseError) {
+              console.error('Erro ao buscar licenças:', licenseError);
               setLicense(null);
             }
           }
@@ -81,6 +100,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         localStorage.removeItem('caixa_user');
         localStorage.removeItem('caixa_last_login');
       }
+    } catch (error) {
+      console.error('Erro ao carregar sessão do localStorage:', error);
     }
   }, []);
 
