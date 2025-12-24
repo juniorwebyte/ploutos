@@ -44,11 +44,11 @@ if (rootElement) {
     }
   };
 
-  // Timeout de segurança: se após 10 segundos ainda estiver carregando, mostrar erro
-  const loadingTimeout = setTimeout(() => {
-    console.error('⚠️ Aplicação demorou mais de 10 segundos para carregar. Verifique o console para erros.');
+  // Timeout de segurança: se após 15 segundos ainda estiver carregando, mostrar erro
+  const loadingTimeoutId = setTimeout(() => {
+    console.error('⚠️ Aplicação demorou mais de 15 segundos para carregar. Verifique o console para erros.');
     // Não fazer nada aqui, deixar o ErrorBoundary ou Suspense lidar com isso
-  }, 10000);
+  }, 15000);
 
   try {
     // Adicionar handler global de erros não capturados
@@ -75,11 +75,11 @@ if (rootElement) {
 
     // Remove loading após React carregar e limpa timeout
     setTimeout(() => {
-      clearTimeout(loadingTimeout);
+      clearTimeout(loadingTimeoutId);
       removeInlineLoading();
     }, 100);
   } catch (error) {
-    clearTimeout(loadingTimeout);
+    clearTimeout(loadingTimeoutId);
     console.error('Erro ao inicializar aplicação:', error);
     // Mostrar erro na tela
     rootElement.innerHTML = `
