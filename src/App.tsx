@@ -53,18 +53,13 @@ type LoginType = 'client' | 'superadmin' | null;
 
 function AppContent() {
   const { isAuthenticated, role, license } = useAuth();
-  const { carregarConfiguracoesVisuais } = useVisualConfig();
+  useVisualConfig(); // Hook já carrega as configurações no useEffect interno
   const { theme, isModern } = useTheme();
   const [loginType, setLoginType] = useState<LoginType>(null);
   const [showLanding, setShowLanding] = useState(true);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
   const [showLicenseModal, setShowLicenseModal] = useState(false);
-
-  // Carregar configurações visuais ao inicializar
-  useEffect(() => {
-    carregarConfiguracoesVisuais();
-  }, [carregarConfiguracoesVisuais]);
 
   useEffect(() => {
     // Se logado e licença bloqueada, exibir modal
@@ -75,18 +70,28 @@ function AppContent() {
 
   // Abrir demo via evento/global flag (pós-cadastro)
   useEffect(() => {
-    const handler = () => {
-      setShowDemo(true);
-      setShowLanding(false);
-    };
-    window.addEventListener('ploutos:open-demo', handler);
-    // flag de segurança
-    const force = localStorage.getItem('force_open_demo');
-    if (force === 'true') {
-      handler();
-      localStorage.removeItem('force_open_demo');
+    try {
+      if (typeof window === 'undefined') return;
+      
+      const handler = () => {
+        setShowDemo(true);
+        setShowLanding(false);
+      };
+      window.addEventListener('ploutos:open-demo', handler);
+      
+      // flag de segurança
+      if (window.localStorage) {
+        const force = localStorage.getItem('force_open_demo');
+        if (force === 'true') {
+          handler();
+          localStorage.removeItem('force_open_demo');
+        }
+      }
+      
+      return () => window.removeEventListener('ploutos:open-demo', handler);
+    } catch (error) {
+      console.error('Erro ao configurar handler de demo:', error);
     }
-    return () => window.removeEventListener('ploutos:open-demo', handler);
   }, []);
 
   const handleSelectLogin = useCallback((type: 'client' | 'superadmin') => {
