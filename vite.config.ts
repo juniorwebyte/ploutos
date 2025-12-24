@@ -14,8 +14,8 @@ export default defineConfig({
   build: {
     // Otimizações de build para melhor performance
     target: 'esnext',
-    minify: process.env.NODE_ENV === 'production' ? 'esbuild' : false,
-    sourcemap: process.env.NODE_ENV === 'production' ? false : true,
+    minify: 'esbuild',
+    sourcemap: false,
     cssCodeSplit: true,
     rollupOptions: {
       output: {

@@ -85,7 +85,7 @@ class Analytics {
     this.saveEvents();
 
     // Log no console em desenvolvimento
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV || import.meta.env.MODE === 'development') {
       console.log('[Analytics]', analyticsEvent);
     }
 

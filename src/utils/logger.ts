@@ -14,8 +14,8 @@ interface LogEntry {
 }
 
 class Logger {
-  private isDevelopment = import.meta.env.DEV || process.env.NODE_ENV === 'development';
-  private logLevel: LogLevel = (import.meta.env.VITE_LOG_LEVEL || process.env.LOG_LEVEL || 'info') as LogLevel;
+  private isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'development';
+  private logLevel: LogLevel = (import.meta.env.VITE_LOG_LEVEL || 'info') as LogLevel;
 
   private shouldLog(level: LogLevel): boolean {
     if (!this.isDevelopment && level === 'debug') return false;

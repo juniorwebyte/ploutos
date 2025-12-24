@@ -32,7 +32,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     });
 
     // Salvar erro no localStorage para análise posterior (apenas em desenvolvimento)
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV || import.meta.env.MODE === 'development') {
       try {
         const errorLogs = JSON.parse(localStorage.getItem('errorLogs') || '[]');
         errorLogs.push({
@@ -121,7 +121,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
                 </button>
               </div>
 
-              {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
+              {(import.meta.env.DEV || import.meta.env.MODE === 'development') && this.state.errorInfo && (
                 <details className="mt-4">
                   <summary className="text-sm text-gray-600 cursor-pointer hover:text-gray-800">
                     Detalhes técnicos (apenas em desenvolvimento)

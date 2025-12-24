@@ -100,6 +100,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         localStorage.removeItem('caixa_user');
         localStorage.removeItem('caixa_last_login');
       }
+    }
     } catch (error) {
       console.error('Erro ao carregar sessão do localStorage:', error);
     }
