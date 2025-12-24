@@ -10,24 +10,38 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import LicenseModal from './components/LicenseModal';
 import PaymentPage from './components/PaymentPage';
 
-// Lazy load components com tratamento de erro
-const lazyWithErrorHandling = (importFn: () => Promise<any>) => {
+// Lazy load components com tratamento de erro robusto
+const lazyWithErrorHandling = (importFn: () => Promise<any>, componentName: string = 'Componente') => {
   return React.lazy(() => {
-    return importFn().catch((error) => {
-      console.error('Erro ao carregar componente:', error);
+    return Promise.race([
+      importFn(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(`Timeout ao carregar ${componentName}`)), 10000)
+      )
+    ]).catch((error) => {
+      console.error(`Erro ao carregar ${componentName}:`, error);
       // Retornar um componente de erro como fallback
       return {
         default: () => (
-          <div className="min-h-screen flex items-center justify-center bg-red-50">
-            <div className="text-center p-8">
-              <h2 className="text-2xl font-bold text-red-800 mb-4">Erro ao Carregar Componente</h2>
-              <p className="text-red-600 mb-4">{error.message || 'Erro desconhecido'}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
-                Recarregar Página
-              </button>
+          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50 p-4">
+            <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-md">
+              <h2 className="text-2xl font-bold text-red-800 mb-4">Erro ao Carregar {componentName}</h2>
+              <p className="text-red-600 mb-2">{error.message || 'Erro desconhecido'}</p>
+              <p className="text-sm text-gray-500 mb-6">Tente recarregar a página ou limpar o cache do navegador.</p>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                >
+                  Recarregar Página
+                </button>
+                <button
+                  onClick={() => window.location.href = '/'}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+                >
+                  Voltar ao Início
+                </button>
+              </div>
             </div>
           </div>
         ),
@@ -36,13 +50,13 @@ const lazyWithErrorHandling = (importFn: () => Promise<any>) => {
   });
 };
 
-const Login = lazyWithErrorHandling(() => import('./components/Login'));
-const CashFlow = lazyWithErrorHandling(() => import('./components/CashFlow'));
-const LandingPage = lazyWithErrorHandling(() => import('./components/LandingPageNew'));
-const LandingPageModern = lazyWithErrorHandling(() => import('./components/LandingPageModern'));
-const AdminPanel = lazyWithErrorHandling(() => import('./components/AdminPanel'));
-const ClientDashboardModern = lazyWithErrorHandling(() => import('./components/ClientDashboardModern'));
-const SuperAdminDashboardModern = lazyWithErrorHandling(() => import('./components/SuperAdminDashboardModern'));
+const Login = lazyWithErrorHandling(() => import('./components/Login'), 'Login');
+const CashFlow = lazyWithErrorHandling(() => import('./components/CashFlow'), 'CashFlow');
+const LandingPage = lazyWithErrorHandling(() => import('./components/LandingPageNew'), 'LandingPage');
+const LandingPageModern = lazyWithErrorHandling(() => import('./components/LandingPageModern'), 'LandingPageModern');
+const AdminPanel = lazyWithErrorHandling(() => import('./components/AdminPanel'), 'AdminPanel');
+const ClientDashboardModern = lazyWithErrorHandling(() => import('./components/ClientDashboardModern'), 'ClientDashboardModern');
+const SuperAdminDashboardModern = lazyWithErrorHandling(() => import('./components/SuperAdminDashboardModern'), 'SuperAdminDashboardModern');
 
 // Componente para rota de pagamento
 function PaymentRoute() {

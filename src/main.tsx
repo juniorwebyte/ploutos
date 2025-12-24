@@ -4,6 +4,7 @@ import App from './App.tsx';
 import './index.css'
 import './styles/performance.css';
 import ErrorBoundary from './components/ErrorBoundary';
+import './utils/debug';
 
 // Componente de loading otimizado
 const LoadingFallback = () => (
@@ -50,6 +51,18 @@ if (rootElement) {
   }, 10000);
 
   try {
+    // Adicionar handler global de erros não capturados
+    window.addEventListener('error', (event) => {
+      console.error('Erro global capturado:', event.error);
+      // Não fazer nada aqui, deixar o ErrorBoundary lidar
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('Promise rejeitada não tratada:', event.reason);
+      // Prevenir que o erro quebre a aplicação
+      event.preventDefault();
+    });
+
     createRoot(rootElement).render(
       <StrictMode>
         <ErrorBoundary>

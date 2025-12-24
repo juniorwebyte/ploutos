@@ -42,68 +42,101 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   });
 
   useEffect(() => {
-    try {
-      // Verificar se localStorage está disponível
-      if (typeof window === 'undefined' || !window.localStorage) {
-        return;
-      }
-      // Verificar se há uma sessão ativa no localStorage
-      const savedUser = localStorage.getItem('caixa_user');
-      const lastLogin = localStorage.getItem('caixa_last_login');
+    let mounted = true;
     
-    if (savedUser && lastLogin) {
-      const lastLoginTime = new Date(lastLogin).getTime();
-      const currentTime = new Date().getTime();
-      const hoursSinceLogin = (currentTime - lastLoginTime) / (1000 * 60 * 60);
+    const loadSession = async () => {
+      try {
+        // Verificar se localStorage está disponível
+        if (typeof window === 'undefined' || !window.localStorage) {
+          return;
+        }
+        
+        // Verificar se há uma sessão ativa no localStorage
+        const savedUser = localStorage.getItem('caixa_user');
+        const lastLogin = localStorage.getItem('caixa_last_login');
       
-      // Logout automático após 8 horas
-      if (hoursSinceLogin < 8) {
-        setIsAuthenticated(true);
-        setUser(savedUser);
-        const savedRole = (localStorage.getItem('caixa_role') as any) || 'user';
-        setRole(savedRole);
-        // Carregar status de licença do localStorage
-        try {
-          const savedLicense = localStorage.getItem('ploutos_license');
-          if (savedLicense) {
-            const licenseData = JSON.parse(savedLicense);
-            // Converter para o formato esperado
-            setLicense({
-              ...licenseData,
-              createdAt: licenseData.createdAt ? new Date(licenseData.createdAt) : new Date(),
-              expiresAt: licenseData.expiresAt ? new Date(licenseData.expiresAt) : new Date(),
-              lastUsed: licenseData.lastUsed ? new Date(licenseData.lastUsed) : new Date()
-            } as any);
-          } else {
-            // Tentar buscar do licenseService
-            try {
-              const allLicenses = licenseService.getAllLicenses();
-              const userLicense = allLicenses.find(l => 
-                l.username === savedUser || 
-                l.userId === savedUser
-              );
-              if (userLicense) {
-                setLicense(userLicense as any);
-              } else {
-                setLicense(null);
+        if (savedUser && lastLogin) {
+          try {
+            const lastLoginTime = new Date(lastLogin).getTime();
+            const currentTime = new Date().getTime();
+            
+            // Verificar se a data é válida
+            if (isNaN(lastLoginTime)) {
+              localStorage.removeItem('caixa_user');
+              localStorage.removeItem('caixa_last_login');
+              return;
+            }
+            
+            const hoursSinceLogin = (currentTime - lastLoginTime) / (1000 * 60 * 60);
+            
+            // Logout automático após 8 horas
+            if (hoursSinceLogin < 8 && mounted) {
+              setIsAuthenticated(true);
+              setUser(savedUser);
+              const savedRole = (localStorage.getItem('caixa_role') as any) || 'user';
+              setRole(savedRole);
+              
+              // Carregar status de licença do localStorage
+              try {
+                const savedLicense = localStorage.getItem('ploutos_license');
+                if (savedLicense) {
+                  const licenseData = JSON.parse(savedLicense);
+                  if (mounted) {
+                    // Converter para o formato esperado
+                    setLicense({
+                      ...licenseData,
+                      createdAt: licenseData.createdAt ? new Date(licenseData.createdAt) : new Date(),
+                      expiresAt: licenseData.expiresAt ? new Date(licenseData.expiresAt) : new Date(),
+                      lastUsed: licenseData.lastUsed ? new Date(licenseData.lastUsed) : new Date()
+                    } as any);
+                  }
+                } else {
+                  // Tentar buscar do licenseService de forma segura
+                  try {
+                    const allLicenses = licenseService.getAllLicenses();
+                    const userLicense = allLicenses.find(l => 
+                      l.username === savedUser || 
+                      l.userId === savedUser
+                    );
+                    if (mounted) {
+                      setLicense(userLicense ? (userLicense as any) : null);
+                    }
+                  } catch (licenseError) {
+                    console.warn('Erro ao buscar licenças (não crítico):', licenseError);
+                    if (mounted) {
+                      setLicense(null);
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn('Erro ao carregar licença (não crítico):', e);
+                if (mounted) {
+                  setLicense(null);
+                }
               }
-            } catch (licenseError) {
-              console.error('Erro ao buscar licenças:', licenseError);
-              setLicense(null);
+            } else if (mounted) {
+              localStorage.removeItem('caixa_user');
+              localStorage.removeItem('caixa_last_login');
+            }
+          } catch (dateError) {
+            console.warn('Erro ao processar data de login (não crítico):', dateError);
+            if (mounted) {
+              localStorage.removeItem('caixa_user');
+              localStorage.removeItem('caixa_last_login');
             }
           }
-        } catch (e) {
-          console.error('Erro ao carregar licença:', e);
-          setLicense(null);
         }
-      } else {
-        localStorage.removeItem('caixa_user');
-        localStorage.removeItem('caixa_last_login');
+      } catch (error) {
+        console.error('Erro ao carregar sessão do localStorage:', error);
+        // Não bloquear a aplicação por erro de sessão
       }
-    }
-    } catch (error) {
-      console.error('Erro ao carregar sessão do localStorage:', error);
-    }
+    };
+
+    loadSession();
+    
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const login = async (username: string, password: string): Promise<boolean> => {
