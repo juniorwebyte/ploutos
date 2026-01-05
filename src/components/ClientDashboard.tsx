@@ -19,7 +19,8 @@ import {
   X,
   Star,
   CheckCircle,
-  Calculator
+  Calculator,
+  Clock
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccessControl } from '../hooks/useAccessControl';
@@ -34,6 +35,7 @@ import CashFlowUnlockRequest from './CashFlowUnlockRequest';
 import LicenseKeyInput from './LicenseKeyInput';
 import FinancialTools from './FinancialTools';
 import SubscriptionActivation from './SubscriptionActivation';
+import TimeClockModule from './TimeClockModule';
 import { CompanyConfig } from '../types';
 import plansService, { PlanRecord } from '../services/plansService';
 
@@ -212,6 +214,7 @@ function ClientDashboard({ onBackToLogin }: ClientDashboardProps) {
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, color: 'blue' },
     { id: 'caixa', label: 'Movimento de Caixa', icon: DollarSign, color: 'green', requiresAccess: 'cashflow' },
     { id: 'ferramentas-financeiras', label: 'Ferramentas Financeiras', icon: Calculator, color: 'indigo' },
+    { id: 'controle-ponto', label: 'Controle de Ponto', icon: Clock, color: 'cyan', requiresAccess: 'timeclock' },
     { id: 'notas', label: 'Notas Fiscais', icon: FileText, color: 'teal', premium: true, requiresAccess: 'notas' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, color: 'purple', premium: true, requiresAccess: 'advanced' },
     { id: 'estoque', label: 'Estoque', icon: Package, color: 'orange', premium: true, requiresAccess: 'advanced' },
@@ -230,7 +233,8 @@ function ClientDashboard({ onBackToLogin }: ClientDashboardProps) {
       pink: 'from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700',
       indigo: 'from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700',
       teal: 'from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700',
-      gray: 'from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700'
+      gray: 'from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700',
+      cyan: 'from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700'
     };
     return colors[color as keyof typeof colors] || colors.blue;
   };
@@ -800,6 +804,41 @@ function ClientDashboard({ onBackToLogin }: ClientDashboardProps) {
         return <FinancialTools />;
       case 'caixa':
         return <CashFlow isDemo={false} onBackToLanding={() => setActiveTab('dashboard')} />;
+      case 'controle-ponto':
+        if (!accessControl.canAccessFeature('timeclock')) {
+          return (
+            <div className="bg-white rounded-2xl p-8 shadow-xl border-2 border-amber-200">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+                  <Lock className="h-6 w-6 text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800" style={{ fontFamily: 'Poppins, sans-serif' }}>Controle de Ponto Eletrônico</h2>
+                  <p className="text-sm text-gray-600" style={{ fontFamily: 'Inter, sans-serif' }}>Funcionalidade premium</p>
+                </div>
+                <Crown className="h-5 w-5 text-amber-500 ml-auto" />
+              </div>
+              <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-200 rounded-xl p-6 mb-6">
+                <p className="text-amber-800 font-semibold mb-2 text-lg" style={{ fontFamily: 'Poppins, sans-serif' }}>🔒 Funcionalidade Premium</p>
+                <p className="text-amber-700 text-sm mb-4" style={{ fontFamily: 'Inter, sans-serif' }}>O controle de ponto eletrônico está disponível apenas para usuários com plano ativo. Gerencie a jornada de trabalho da sua equipe de forma profissional.</p>
+                <ul className="list-disc list-inside text-amber-700 text-sm space-y-1" style={{ fontFamily: 'Inter, sans-serif' }}>
+                  <li>Registro de ponto completo</li>
+                  <li>Gestão de funcionários e filiais</li>
+                  <li>Jornadas de trabalho personalizadas</li>
+                  <li>Relatórios e justificativas</li>
+                </ul>
+              </div>
+              <button 
+                onClick={() => setActiveTab('meuplano')}
+                className="px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-xl hover:from-amber-600 hover:to-amber-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
+                style={{ fontFamily: 'Poppins, sans-serif' }}
+              >
+                Ver Planos Disponíveis
+              </button>
+            </div>
+          );
+        }
+        return <TimeClockModule onBack={() => setActiveTab('dashboard')} />;
       case 'notas':
         if (!accessControl.canAccessFeature('notas')) {
           return (

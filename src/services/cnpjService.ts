@@ -25,31 +25,11 @@ export interface CNPJData {
   porte?: string;
 }
 
-export interface EmpresaData {
-  cnpj: string;
-  razaoSocial?: string;
-  nomeFantasia?: string;
-  situacao?: string;
-  logradouro?: string;
-  numero?: string;
-  complemento?: string;
-  bairro?: string;
-  municipio?: string;
-  uf?: string;
-  cep?: string;
-  telefone?: string;
-  email?: string;
-  capitalSocial?: number;
-  dataAbertura?: string;
-  naturezaJuridica?: string;
-  porte?: string;
-}
-
 class CNPJService {
   private baseUrl = 'https://www.receitaws.com.br/v1';
   private alternativeUrl = 'https://brasilapi.com.br/api/cnpj/v1';
 
-  async consultarCNPJ(cnpj: string): Promise<EmpresaData | null> {
+  async consultarCNPJ(cnpj: string): Promise<CNPJData | null> {
     try {
       const cleanCNPJ = cnpj.replace(/\D/g, '');
       if (cleanCNPJ.length !== 14) {
@@ -77,10 +57,10 @@ class CNPJService {
         }
 
         // Mapear dados da API para nosso formato
-        const data: EmpresaData = {
+        const data: CNPJData = {
           cnpj: response.data.cnpj || cleanCNPJ,
-          razaoSocial: response.data.nome || response.data.razao_social || '',
-          nomeFantasia: response.data.fantasia || response.data.nome_fantasia || '',
+          razao_social: response.data.nome || response.data.razao_social || '',
+          nome_fantasia: response.data.fantasia || response.data.nome_fantasia || '',
           situacao: response.data.situacao || response.data.status || '',
           logradouro: response.data.logradouro || '',
           numero: response.data.numero || '',
@@ -91,9 +71,9 @@ class CNPJService {
           cep: response.data.cep ? response.data.cep.replace(/\D/g, '') : '',
           telefone: response.data.telefone || response.data.phone || '',
           email: response.data.email || '',
-          capitalSocial: response.data.capital_social || 0,
-          dataAbertura: response.data.abertura || response.data.data_abertura || '',
-          naturezaJuridica: response.data.natureza_juridica || '',
+          capital_social: response.data.capital_social || 0,
+          data_abertura: response.data.abertura || response.data.data_abertura || '',
+          natureza_juridica: response.data.natureza_juridica || '',
           porte: response.data.porte || '',
         };
 
@@ -119,10 +99,10 @@ class CNPJService {
           }
 
           // Mapear dados da BrasilAPI para nosso formato
-          const data: EmpresaData = {
+          const data: CNPJData = {
             cnpj: response.data.cnpj || cleanCNPJ,
-            razaoSocial: response.data.razao_social || response.data.nome || '',
-            nomeFantasia: response.data.nome_fantasia || response.data.fantasia || '',
+            razao_social: response.data.razao_social || response.data.nome || '',
+            nome_fantasia: response.data.nome_fantasia || response.data.fantasia || '',
             situacao: response.data.descricao_situacao_cadastral || '',
             logradouro: response.data.logradouro || '',
             numero: response.data.numero || '',
@@ -133,9 +113,9 @@ class CNPJService {
             cep: response.data.cep ? response.data.cep.replace(/\D/g, '') : '',
             telefone: response.data.ddd_telefone_1 || response.data.telefone || '',
             email: response.data.email || '',
-            capitalSocial: response.data.capital_social || 0,
-            dataAbertura: response.data.data_inicio_atividade || '',
-            naturezaJuridica: response.data.natureza_juridica || '',
+            capital_social: response.data.capital_social || 0,
+            data_abertura: response.data.data_inicio_atividade || '',
+            natureza_juridica: response.data.natureza_juridica || '',
             porte: response.data.porte || '',
           };
 

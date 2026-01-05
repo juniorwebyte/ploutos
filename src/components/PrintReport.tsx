@@ -78,6 +78,14 @@ export function printCashFlow(data: CashFlowData, reduced: boolean = false, incl
     ? data.entries.brindesLancamentos.reduce((sum, l) => sum + (Number(l.valor) || 0), 0)
     : (data.entries.brindes || 0);
 
+  const totalVRLancamentos = Array.isArray(data.entries.vrLancamentos)
+    ? data.entries.vrLancamentos.reduce((sum, l) => sum + (Number(l.valor) || 0), 0)
+    : 0;
+
+  const totalVALancamentos = Array.isArray(data.entries.vaLancamentos)
+    ? data.entries.vaLancamentos.reduce((sum, l) => sum + (Number(l.valor) || 0), 0)
+    : 0;
+
   const totalEntradas = 
     data.entries.dinheiro + 
     data.entries.fundoCaixa + 
@@ -91,6 +99,8 @@ export function printCashFlow(data: CashFlowData, reduced: boolean = false, incl
     (data.entries.crediario || 0) +
     (data.entries.cartaoPresente || 0) +
     (data.entries.cashBack || 0) +
+    totalVRLancamentos +
+    totalVALancamentos +
     totalDevolucoes +
     valesImpactoEntrada +
     totalCheques +
@@ -110,7 +120,7 @@ export function printCashFlow(data: CashFlowData, reduced: boolean = false, incl
 
   const htmlContent = reduced
     ? generateReducedHTML(data, totalEntradas, totalSaidas, incluirObservacoes)
-    : generateFullHTML(data, totalEntradas, totalSaidas, totalDevolucoes, valesImpactoEntrada, totalCheques, totalEnviosCorreiosEntrada, totalTaxas, incluirObservacoes);
+    : generateFullHTML(data, totalEntradas, totalSaidas, totalDevolucoes, valesImpactoEntrada, totalCheques, totalEnviosCorreiosEntrada, totalTaxas, totalVRLancamentos, totalVALancamentos, incluirObservacoes);
 
   printWindow.document.write(htmlContent);
   printWindow.document.close();
@@ -122,7 +132,7 @@ export function printCashFlow(data: CashFlowData, reduced: boolean = false, incl
   };
 }
 
-function generateFullHTML(data: CashFlowData, totalEntradas: number, totalSaidas: number, totalDevolucoes: number, valesImpactoEntrada: number, totalCheques: number, totalEnviosCorreiosEntrada: number, totalTaxas: number, incluirObservacoes: boolean = false): string {
+function generateFullHTML(data: CashFlowData, totalEntradas: number, totalSaidas: number, totalDevolucoes: number, valesImpactoEntrada: number, totalCheques: number, totalEnviosCorreiosEntrada: number, totalTaxas: number, totalVRLancamentos: number, totalVALancamentos: number, incluirObservacoes: boolean = false): string {
   return `
 <!DOCTYPE html>
 <html>
@@ -335,6 +345,18 @@ function generateFullHTML(data: CashFlowData, totalEntradas: number, totalSaidas
     ${Array.isArray(data.entries.cashBackClientes) && data.entries.cashBackClientes.length > 0
       ? `<div>
           ${data.entries.cashBackClientes.map(c => `<div class="row-desc"><span>${c.nome} (CPF: ${c.cpf}):</span><span>${formatCurrency(c.valor)}</span></div>`).join('')}
+        </div>`
+      : ''}
+    ${totalVRLancamentos > 0 ? `<div class="row"><span>Vale Refeição (VR):</span><span>${formatCurrency(totalVRLancamentos)}</span></div>` : ''}
+    ${Array.isArray(data.entries.vrLancamentos) && data.entries.vrLancamentos.length > 0
+      ? `<div>
+          ${data.entries.vrLancamentos.map(l => `<div class="row-desc"><span>${l.bandeira}:</span><span>${formatCurrency(l.valor)}</span></div>`).join('')}
+        </div>`
+      : ''}
+    ${totalVALancamentos > 0 ? `<div class="row"><span>Vale Alimentação (VA):</span><span>${formatCurrency(totalVALancamentos)}</span></div>` : ''}
+    ${Array.isArray(data.entries.vaLancamentos) && data.entries.vaLancamentos.length > 0
+      ? `<div>
+          ${data.entries.vaLancamentos.map(l => `<div class="row-desc"><span>${l.bandeira}:</span><span>${formatCurrency(l.valor)}</span></div>`).join('')}
         </div>`
       : ''}
     ${totalCheques > 0 ? `<div class="row"><span>Cheques:</span><span>${formatCurrency(totalCheques)}</span></div>` : ''}

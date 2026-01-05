@@ -574,4 +574,102 @@ model TimeClockAuditLog {
   @@index([createdAt])
 }
 
+// ============================================
+// RAMOS DE ATUAÇÃO - MODELOS
+// ============================================
+
+// Ramos de atuação disponíveis
+model BusinessSegment {
+  id            String    @id @default(uuid())
+  nome          String
+  categoria     String    // comercio_varejista | alimentacao_bebidas | prestacao_servicos | etc
+  codigo        String    @unique // Código único para identificação
+  descricao     String?
+  ativo         Boolean   @default(true)
+  personalizado Boolean   @default(false) // Se foi criado pelo usuário
+  dataCriacao   DateTime  @default(now())
+  dataAtualizacao DateTime @updatedAt
+  
+  companySegments CompanyBusinessSegment[]
+  
+  @@index([categoria])
+  @@index([codigo])
+  @@index([ativo])
+}
+
+// Configuração de ramo para uma empresa/loja
+model CompanyBusinessSegment {
+  id            String    @id @default(uuid())
+  company       Company?   @relation(fields: [companyId], references: [id])
+  companyId     String?
+  branch        Branch?    @relation(fields: [branchId], references: [id])
+  branchId      String?
+  segment       BusinessSegment @relation(fields: [segmentId], references: [id])
+  segmentId     String
+  
+  // Configuração completa (JSON)
+  config        String    // JSON string com BusinessSegmentConfig
+  
+  ativo         Boolean   @default(true)
+  dataAtivacao  DateTime  @default(now())
+  dataCriacao   DateTime  @default(now())
+  dataAtualizacao DateTime @updatedAt
+  
+  @@index([companyId])
+  @@index([branchId])
+  @@index([segmentId])
+  @@index([ativo])
+}
+
+model Company {
+  id          String    @id @default(uuid())
+  name        String
+  cnpj        String?   @unique
+  email       String?
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  branches    Branch[]
+  employees   Employee[]
+  schedules   WorkSchedule[]
+  holidays    Holiday[]
+  settings    CompanySettings?
+  businessSegments CompanyBusinessSegment[]
+  
+  @@index([isActive])
+}
+
+model Branch {
+  id          String    @id @default(uuid())
+  company     Company   @relation(fields: [companyId], references: [id])
+  companyId   String
+  name        String
+  code        String?
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  latitude    Float?
+  longitude   Float?
+  radius      Float?    @default(100.0) // Raio em metros para geolocalização
+  authorizedIPs String? // JSON array de IPs autorizados
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  employees   Employee[]
+  timeClocks  TimeClock[]
+  qrCodes     QRCode[]
+  businessSegments CompanyBusinessSegment[]
+  
+  @@index([companyId])
+  @@index([isActive])
+}
+
 

@@ -175,11 +175,16 @@ export const BUSINESS_CONFIG = {
   // Informações da empresa
   COMPANY: {
     NAME: 'Webyte Desenvolvimentos',
+    RAZAO_SOCIAL: 'Webyte Desenvolvimentos LTDA',
+    CNPJ: '12.345.678/0001-90',
     ADDRESS: 'Rua Agrimensor Sugaya 1203, Bloco 5 Sala 32',
     CITY: 'São Paulo - SP',
     TECHNOLOGY: 'Webyte | Tecnologia Laravel',
     BRAND: 'PloutosLedger',
-    TAGLINE: 'A riqueza começa com controle.'
+    TAGLINE: 'A riqueza começa com controle.',
+    PRIVACY_POLICY_URL: '/politica-privacidade',
+    TERMS_URL: '/termos-uso',
+    LGPD_COMPLIANCE: true
   },
   
   // Configurações financeiras

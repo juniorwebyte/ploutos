@@ -10,53 +10,14 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import LicenseModal from './components/LicenseModal';
 import PaymentPage from './components/PaymentPage';
 
-// Lazy load components com tratamento de erro robusto
-const lazyWithErrorHandling = (importFn: () => Promise<any>, componentName: string = 'Componente') => {
-  return React.lazy(() => {
-    return Promise.race([
-      importFn(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Timeout ao carregar ${componentName}`)), 10000)
-      )
-    ]).catch((error) => {
-      console.error(`Erro ao carregar ${componentName}:`, error);
-      // Retornar um componente de erro como fallback
-      return {
-        default: () => (
-          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50 p-4">
-            <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-md">
-              <h2 className="text-2xl font-bold text-red-800 mb-4">Erro ao Carregar {componentName}</h2>
-              <p className="text-red-600 mb-2">{error.message || 'Erro desconhecido'}</p>
-              <p className="text-sm text-gray-500 mb-6">Tente recarregar a página ou limpar o cache do navegador.</p>
-              <div className="flex gap-3 justify-center">
-                <button
-                  onClick={() => window.location.reload()}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                >
-                  Recarregar Página
-                </button>
-                <button
-                  onClick={() => window.location.href = '/'}
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
-                >
-                  Voltar ao Início
-                </button>
-              </div>
-            </div>
-          </div>
-        ),
-      };
-    });
-  });
-};
-
-const Login = lazyWithErrorHandling(() => import('./components/Login'), 'Login');
-const CashFlow = lazyWithErrorHandling(() => import('./components/CashFlow'), 'CashFlow');
-const LandingPage = lazyWithErrorHandling(() => import('./components/LandingPageNew'), 'LandingPage');
-const LandingPageModern = lazyWithErrorHandling(() => import('./components/LandingPageModern'), 'LandingPageModern');
-const AdminPanel = lazyWithErrorHandling(() => import('./components/AdminPanel'), 'AdminPanel');
-const ClientDashboardModern = lazyWithErrorHandling(() => import('./components/ClientDashboardModern'), 'ClientDashboardModern');
-const SuperAdminDashboardModern = lazyWithErrorHandling(() => import('./components/SuperAdminDashboardModern'), 'SuperAdminDashboardModern');
+// Lazy load components
+const Login = React.lazy(() => import('./components/Login'));
+const CashFlow = React.lazy(() => import('./components/CashFlow'));
+const LandingPage = React.lazy(() => import('./components/LandingPageNew'));
+const LandingPageModern = React.lazy(() => import('./components/LandingPageModern'));
+const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
+const ClientDashboardModern = React.lazy(() => import('./components/ClientDashboardModern'));
+const SuperAdminDashboardModern = React.lazy(() => import('./components/SuperAdminDashboardModern'));
 
 // Componente para rota de pagamento
 function PaymentRoute() {
@@ -67,13 +28,18 @@ type LoginType = 'client' | 'superadmin' | null;
 
 function AppContent() {
   const { isAuthenticated, role, license } = useAuth();
-  useVisualConfig(); // Hook já carrega as configurações no useEffect interno
+  const { carregarConfiguracoesVisuais } = useVisualConfig();
   const { theme, isModern } = useTheme();
   const [loginType, setLoginType] = useState<LoginType>(null);
   const [showLanding, setShowLanding] = useState(true);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
   const [showLicenseModal, setShowLicenseModal] = useState(false);
+
+  // Carregar configurações visuais ao inicializar
+  useEffect(() => {
+    carregarConfiguracoesVisuais();
+  }, [carregarConfiguracoesVisuais]);
 
   useEffect(() => {
     // Se logado e licença bloqueada, exibir modal
@@ -84,28 +50,18 @@ function AppContent() {
 
   // Abrir demo via evento/global flag (pós-cadastro)
   useEffect(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      
-      const handler = () => {
-        setShowDemo(true);
-        setShowLanding(false);
-      };
-      window.addEventListener('ploutos:open-demo', handler);
-      
-      // flag de segurança
-      if (window.localStorage) {
-        const force = localStorage.getItem('force_open_demo');
-        if (force === 'true') {
-          handler();
-          localStorage.removeItem('force_open_demo');
-        }
-      }
-      
-      return () => window.removeEventListener('ploutos:open-demo', handler);
-    } catch (error) {
-      console.error('Erro ao configurar handler de demo:', error);
+    const handler = () => {
+      setShowDemo(true);
+      setShowLanding(false);
+    };
+    window.addEventListener('ploutos:open-demo', handler);
+    // flag de segurança
+    const force = localStorage.getItem('force_open_demo');
+    if (force === 'true') {
+      handler();
+      localStorage.removeItem('force_open_demo');
     }
+    return () => window.removeEventListener('ploutos:open-demo', handler);
   }, []);
 
   const handleSelectLogin = useCallback((type: 'client' | 'superadmin') => {

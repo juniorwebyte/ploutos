@@ -1,3 +1,26 @@
+// Enum para bandeiras de benefícios (VR/VA)
+export enum BandeiraBeneficio {
+  ALELO = 'Alelo',
+  PLUXEE = 'Pluxee (antiga Sodexo)',
+  TICKET = 'Ticket',
+  VR_BENEFICIOS = 'VR Benefícios',
+  BEN_VISA_VALE = 'Ben Visa Vale',
+  GREEN_CARD = 'Green Card',
+  UP_BRASIL = 'Up Brasil',
+  VEROCARD = 'Verocard',
+  CAJU = 'Caju',
+  FLASH_BENEFICIOS = 'Flash Benefícios',
+  SWILE = 'Swile',
+  IFOOD_BENEFICIOS = 'iFood Benefícios'
+}
+
+// Interface para lançamento de VR/VA
+export interface ValeRefeicaoAlimentacao {
+  tipo: 'VR' | 'VA';
+  bandeira: BandeiraBeneficio;
+  valor: number;
+}
+
 // Interface para cheques
 export interface Cheque {
   banco: string;
@@ -56,6 +79,12 @@ export interface CashFlowEntry {
   cartaoPresenteClientes?: { nome: string; valor: number; parcelas: number }[];
   cashBack?: number;
   cashBackClientes?: CashBackCliente[];
+  
+  // Vale Refeição (VR) e Vale Alimentação (VA)
+  valeRefeicao?: number;
+  valeAlimentacao?: number;
+  vrLancamentos?: ValeRefeicaoAlimentacao[];
+  vaLancamentos?: ValeRefeicaoAlimentacao[];
   
   // Sistema de categorias
   categoria?: { categoriaId: string; tagIds?: string[]; observacao?: string };

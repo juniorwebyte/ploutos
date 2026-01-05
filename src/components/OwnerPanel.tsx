@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, Building, MapPin, Phone, Mail, Globe, CreditCard, Palette, Settings, Upload, Check, Shield, RefreshCw, KeyRound, Calendar } from 'lucide-react';
+import { X, Save, Building, MapPin, Phone, Mail, Globe, CreditCard, Palette, Settings, Upload, Check, Shield, RefreshCw, KeyRound, Calendar, Briefcase } from 'lucide-react';
 import { CompanyConfig } from '../types';
 import pixService from '../services/pixService';
 import licenseService, { License } from '../services/licenseService';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPhone, formatCEP, formatCNPJ, unformatPhone, unformatCEP, unformatCNPJ } from '../utils/formatters';
+import BusinessSegmentConfig from './BusinessSegmentConfig';
+import { CompanyBusinessSegment } from '../types/businessSegment';
 
 interface OwnerPanelProps {
   isOpen: boolean;
@@ -55,7 +57,7 @@ export default function OwnerPanel({ isOpen, onClose, onConfigUpdate }: OwnerPan
     }
   });
 
-  const [activeTab, setActiveTab] = useState<'empresa' | 'pix' | 'personalizacao' | 'configuracao' | 'licenca'>('empresa');
+  const [activeTab, setActiveTab] = useState<'empresa' | 'pix' | 'personalizacao' | 'configuracao' | 'licenca' | 'ramo'>('empresa');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const { user, setLicense: setAuthLicense } = useAuth();
@@ -351,6 +353,7 @@ export default function OwnerPanel({ isOpen, onClose, onConfigUpdate }: OwnerPan
           <div className="flex min-w-max">
             {[
               { id: 'empresa', label: 'Empresa', icon: Building },
+              { id: 'ramo', label: 'Ramo de Atuação', icon: Briefcase },
               { id: 'pix', label: 'PIX', icon: CreditCard },
               { id: 'personalizacao', label: 'Personalização', icon: Palette },
               { id: 'configuracao', label: 'Configuração', icon: Settings },
@@ -899,6 +902,19 @@ export default function OwnerPanel({ isOpen, onClose, onConfigUpdate }: OwnerPan
                   </select>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'ramo' && (
+            <div>
+              <BusinessSegmentConfig
+                onSegmentChange={(segment: CompanyBusinessSegment) => {
+                  // Callback quando o segmento é alterado
+                  console.log('Segmento alterado:', segment);
+                  // Recarregar a página para aplicar as mudanças
+                  window.location.reload();
+                }}
+              />
             </div>
           )}
 

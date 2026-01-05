@@ -69,7 +69,7 @@ import paymentGatewayService from '../services/paymentGatewayService';
 import fiscalService from '../services/fiscalService';
 import { fiscalBrazilService } from '../services/fiscalBrazilService';
 import { backupService } from '../services/backupService';
-import { cnpjService, EmpresaData } from '../services/cnpjService';
+import cnpjService, { EmpresaData } from '../services/cnpjService';
 import { formatPhone, formatCPFCNPJ, formatCPF, formatCNPJ, unformatPhone, unformatCPF, unformatCNPJ, formatCurrencyInput, unformatCurrency } from '../utils/formatters';
 import storageManager from '../utils/storage';
 import ProductCard from './ProductCard';

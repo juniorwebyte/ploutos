@@ -528,7 +528,7 @@ export default function Login({ onBackToLanding, loginType, onBackToSelector }: 
             </div>
             </form>
             {/* Credenciais de Demo - Apenas em desenvolvimento */}
-            {(import.meta.env.DEV || import.meta.env.MODE === 'development') && (
+            {process.env.NODE_ENV === 'development' && (
               <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <p className="text-xs text-gray-600 font-medium mb-3 text-center" style={{ fontFamily: 'Inter, sans-serif' }}>
                   <strong>Credenciais de Teste:</strong>

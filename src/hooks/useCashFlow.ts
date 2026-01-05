@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { CashFlowEntry, CashFlowExit, Cancelamento, Cheque, SaidaRetirada, Puxador, OutroLancamento, BrindeLancamento } from '../types';
+import { CashFlowEntry, CashFlowExit, Cancelamento, Cheque, SaidaRetirada, Puxador, OutroLancamento, BrindeLancamento, ValeRefeicaoAlimentacao } from '../types';
 import { preciseCurrency } from '../utils/currency';
 
 const STORAGE_KEY = 'cashFlowData';
@@ -75,6 +75,10 @@ export const useCashFlow = () => {
     cartaoPresenteClientes: [],
     cashBack: 0,
     cashBackClientes: [],
+    valeRefeicao: 0,
+    valeAlimentacao: 0,
+    vrLancamentos: [],
+    vaLancamentos: [],
   });
 
   const [exits, setExits] = useState<CashFlowExit>({
@@ -144,6 +148,22 @@ export const useCashFlow = () => {
     }, 0);
   }, [entries.brindesLancamentos]);
 
+  // Calcular total de VR
+  const totalVRLancamentos = useMemo(() => {
+    if (!Array.isArray(entries.vrLancamentos)) return 0;
+    return entries.vrLancamentos.reduce((sum, lancamento) => {
+      return preciseCurrency.add(sum, Number(lancamento.valor) || 0);
+    }, 0);
+  }, [entries.vrLancamentos]);
+
+  // Calcular total de VA
+  const totalVALancamentos = useMemo(() => {
+    if (!Array.isArray(entries.vaLancamentos)) return 0;
+    return entries.vaLancamentos.reduce((sum, lancamento) => {
+      return preciseCurrency.add(sum, Number(lancamento.valor) || 0);
+    }, 0);
+  }, [entries.vaLancamentos]);
+
   const totalEntradas = useMemo(() => {
     // Usar cálculos precisos para evitar problemas de ponto flutuante
     const outrosValor = totalOutrosLancamentos > 0 ? totalOutrosLancamentos : (entries.outros || 0);
@@ -162,9 +182,11 @@ export const useCashFlow = () => {
       entries.crediario || 0,
       entries.cartaoPresente || 0,
       entries.cashBack || 0,
-      totalTaxas
+      totalTaxas,
+      totalVRLancamentos,
+      totalVALancamentos
     );
-  }, [entries, totalTaxas, totalOutrosLancamentos, totalBrindesLancamentos]);
+  }, [entries, totalTaxas, totalOutrosLancamentos, totalBrindesLancamentos, totalVRLancamentos, totalVALancamentos]);
 
   const totalDevolucoes = useMemo(() => {
     if (!Array.isArray(exits.devolucoes)) return 0;
@@ -708,6 +730,54 @@ export const useCashFlow = () => {
     setHasChanges(true);
   }, []);
 
+  // Função para adicionar lançamento de VR
+  const adicionarVRLancamento = useCallback((lancamento: ValeRefeicaoAlimentacao) => {
+    setEntries(prev => ({
+      ...prev,
+      vrLancamentos: [...(prev.vrLancamentos || []), lancamento],
+      valeRefeicao: (prev.valeRefeicao || 0) + lancamento.valor
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para remover lançamento de VR
+  const removerVRLancamento = useCallback((index: number) => {
+    setEntries(prev => {
+      const lancamentoRemovido = (prev.vrLancamentos || [])[index];
+      const novosLancamentos = (prev.vrLancamentos || []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        vrLancamentos: novosLancamentos,
+        valeRefeicao: (prev.valeRefeicao || 0) - (lancamentoRemovido?.valor || 0)
+      };
+    });
+    setHasChanges(true);
+  }, []);
+
+  // Função para adicionar lançamento de VA
+  const adicionarVALancamento = useCallback((lancamento: ValeRefeicaoAlimentacao) => {
+    setEntries(prev => ({
+      ...prev,
+      vaLancamentos: [...(prev.vaLancamentos || []), lancamento],
+      valeAlimentacao: (prev.valeAlimentacao || 0) + lancamento.valor
+    }));
+    setHasChanges(true);
+  }, []);
+
+  // Função para remover lançamento de VA
+  const removerVALancamento = useCallback((index: number) => {
+    setEntries(prev => {
+      const lancamentoRemovido = (prev.vaLancamentos || [])[index];
+      const novosLancamentos = (prev.vaLancamentos || []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        vaLancamentos: novosLancamentos,
+        valeAlimentacao: (prev.valeAlimentacao || 0) - (lancamentoRemovido?.valor || 0)
+      };
+    });
+    setHasChanges(true);
+  }, []);
+
   // Função para limpar formulário
   const clearForm = useCallback(() => {
     setEntries({
@@ -746,6 +816,10 @@ export const useCashFlow = () => {
       cashBackClientes: [],
       outrosLancamentos: [],
       brindesLancamentos: [],
+      valeRefeicao: 0,
+      valeAlimentacao: 0,
+      vrLancamentos: [],
+      vaLancamentos: [],
     });
     setExits({
       descontos: 0,
@@ -807,6 +881,10 @@ export const useCashFlow = () => {
             boletosClientes: Array.isArray(parsed.entries.boletosClientes) ? parsed.entries.boletosClientes : [],
             cheques: Array.isArray(parsed.entries.cheques) ? parsed.entries.cheques : [],
             taxas: Array.isArray(parsed.entries.taxas) ? parsed.entries.taxas : [],
+            valeRefeicao: parsed.entries.valeRefeicao || 0,
+            valeAlimentacao: parsed.entries.valeAlimentacao || 0,
+            vrLancamentos: Array.isArray(parsed.entries.vrLancamentos) ? parsed.entries.vrLancamentos : [],
+            vaLancamentos: Array.isArray(parsed.entries.vaLancamentos) ? parsed.entries.vaLancamentos : [],
           } as CashFlowEntry;
           
           const exitsWithDefault = {
@@ -935,6 +1013,13 @@ export const useCashFlow = () => {
     removerSaidaRetirada,
     atualizarSaidaRetirada,
     totalSaidasRetiradas,
-    totalEnviosCorreios
+    totalEnviosCorreios,
+    // VR/VA
+    adicionarVRLancamento,
+    removerVRLancamento,
+    adicionarVALancamento,
+    removerVALancamento,
+    totalVRLancamentos,
+    totalVALancamentos
   };
 };

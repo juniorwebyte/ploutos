@@ -115,7 +115,7 @@ export const useAccessControl = (): AccessControl => {
     
     // Se ainda não carregou a licença, BLOQUEAR features premium mas permitir básicas
     if (!isLicenseLoaded) {
-      if (feature === 'cashflow' || feature === 'notas') return false; // SEMPRE bloquear cashflow e notas sem licença
+      if (feature === 'cashflow' || feature === 'notas' || feature === 'timeclock') return false; // SEMPRE bloquear cashflow, notas e timeclock sem licença
       if (feature === 'customers') return true; // Permitir básicas apenas para clientes
       return false; // Bloquear premium
     }
@@ -127,11 +127,11 @@ export const useAccessControl = (): AccessControl => {
     
     // Se não tem licença OU licença não está ativa, bloquear features premium
     if (!license || !isLicenseActive) {
-      // BLOQUEAR cashflow e notas por padrão - requer pagamento ativo
-      if (feature === 'cashflow' || feature === 'notas') {
-        return false; // Movimento de Caixa e Notas Fiscais SEMPRE bloqueados sem pagamento
+      // BLOQUEAR cashflow, notas e timeclock por padrão - requer pagamento ativo
+      if (feature === 'cashflow' || feature === 'notas' || feature === 'timeclock') {
+        return false; // Movimento de Caixa, Notas Fiscais e Controle de Ponto SEMPRE bloqueados sem pagamento
       }
-      // Features básicas podem ser acessadas mesmo sem licença ativa (exceto cashflow e notas)
+      // Features básicas podem ser acessadas mesmo sem licença ativa (exceto cashflow, notas e timeclock)
       if (feature === 'customers') {
         return true; // Permitir acesso básico apenas para clientes
       }
@@ -142,6 +142,9 @@ export const useAccessControl = (): AccessControl => {
     switch (feature) {
       case 'cashflow':
         // Movimento de Caixa requer licença ativa OU trial (30 dias grátis)
+        return isLicenseActive === true && !isLicenseSuspended;
+      case 'timeclock':
+        // Controle de Ponto requer licença ativa OU trial (30 dias grátis)
         return isLicenseActive === true && !isLicenseSuspended;
       case 'notas':
         // Notas Fiscais requer APENAS licença ativa (pagamento realizado) - SEM trial

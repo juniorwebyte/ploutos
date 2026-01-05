@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { LogOut, Calculator, TrendingUp, TrendingDown, Save, RotateCcw, Download, FileText, Building, Info, CheckCircle2, XCircle, AlertCircle, BarChart3, X, Filter, Bell, AlertTriangle, ExternalLink, Maximize2, Minimize2, Search, Keyboard, FileSpreadsheet, Clock, Lock, Unlock } from 'lucide-react';
+import { LogOut, Calculator, TrendingUp, TrendingDown, Save, RotateCcw, Download, FileText, Building, Info, CheckCircle2, XCircle, AlertCircle, BarChart3, X, Filter, Bell, AlertTriangle, ExternalLink, Maximize2, Minimize2, Search, Keyboard, FileSpreadsheet, Clock, Lock, Unlock, CreditCard, Shield, HelpCircle } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import { useCashFlow } from '../hooks/useCashFlow';
@@ -28,7 +28,11 @@ import WebhooksModal from './WebhooksModal';
 import CategoryManager from './CategoryManager';
 import CategorySelector from './CategorySelector';
 import ConfirmHighValueModal from './ConfirmHighValueModal';
+import ValeRefeicaoAlimentacaoInput from './ValeRefeicaoAlimentacaoInput';
 import { useDarkMode } from '../hooks/useDarkMode';
+import { useBusinessSegment } from '../hooks/useBusinessSegment';
+import BusinessSegmentRequiredModal from './BusinessSegmentRequiredModal';
+import FirstDayGuide from './FirstDayGuide';
 import { exportService } from '../services/exportService';
 import { categoryService } from '../services/categoryService';
 import { validateCPF, validateCNPJ, validatePixKey, isHighValue } from '../utils/validations';
@@ -53,6 +57,16 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   const { startDemo, resetDemo, timeInfo, isDemoActive } = useDemoTimer();
   const accessControl = useAccessControl();
   const [showAccessLimitation, setShowAccessLimitation] = useState(false);
+  const { 
+    companySegment, 
+    getTerm, 
+    hasFuncionalidade, 
+    refreshSegment,
+    isRamoAlimenticio,
+    isFormaPagamentoOculta,
+    deveExibirVRVA,
+    loading: loadingSegment
+  } = useBusinessSegment();
   const {
     entries,
     exits,
@@ -99,7 +113,13 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
     removerSaidaRetirada,
     atualizarSaidaRetirada,
     totalSaidasRetiradas,
-    totalEnviosCorreios
+    totalEnviosCorreios,
+    adicionarVRLancamento,
+    removerVRLancamento,
+    adicionarVALancamento,
+    removerVALancamento,
+    totalVRLancamentos,
+    totalVALancamentos
   } = useCashFlow();
 
   const [showConfirmClear, setShowConfirmClear] = useState(false);
@@ -150,6 +170,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [showHighValueConfirm, setShowHighValueConfirm] = useState(false);
   const [pendingHighValueAction, setPendingHighValueAction] = useState<{ field: string; value: number; callback: () => void; description: string } | null>(null);
+  const [showSegmentRequiredModal, setShowSegmentRequiredModal] = useState(false);
   const { isDark, toggleDarkMode } = useDarkMode();
   // Exibir/Recolher seções
   const [mostrarEntradas, setMostrarEntradas] = useState(true);
@@ -296,6 +317,42 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
 
     return unsubscribe;
   }, []);
+
+  // Verificar se há ramo de atuação selecionado (obrigatório)
+  useEffect(() => {
+    if (!loadingSegment && !companySegment && !isDemo) {
+      // Se não há ramo selecionado e não está em modo demo, mostrar modal obrigatório
+      setShowSegmentRequiredModal(true);
+    }
+  }, [loadingSegment, companySegment, isDemo]);
+
+  // Handler para quando um ramo é selecionado
+  const handleSegmentSelected = useCallback((segment: any) => {
+    refreshSegment();
+    setShowSegmentRequiredModal(false);
+    setNotification({
+      type: 'success',
+      message: `Ramo de atuação "${segment.segment.nome}" configurado com sucesso!`,
+      isVisible: true
+    });
+  }, [refreshSegment]);
+
+  // Verificar se é primeiro dia de uso
+  useEffect(() => {
+    if (!isDemo && companySegment && !loadingSegment) {
+      const firstDayCompleted = localStorage.getItem('ploutos_first_day_completed');
+      const hasRecords = localStorage.getItem('cashFlowRecords');
+      
+      // Se não completou o guia e não tem registros salvos, mostrar guia
+      if (firstDayCompleted !== 'true' && (!hasRecords || JSON.parse(hasRecords || '[]').length === 0)) {
+        // Aguardar um pouco para não sobrepor o modal de ramo
+        const timer = setTimeout(() => {
+          setShowFirstDayGuide(true);
+        }, 2000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isDemo, companySegment, loadingSegment]);
 
   // Funções para controlar tela cheia (apenas do sistema)
   const toggleFullscreen = useCallback(() => {
@@ -2985,10 +3042,20 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                   <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                     {isDemo ? 'Demonstração - Movimento de Caixa' : 'Movimento de Caixa'}
                   </h1>
-                  <p className="text-purple-200 text-xs flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
-                    {isDemo ? 'Teste todas as funcionalidades' : 'Controle financeiro automatizado'}
-                  </p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <p className="text-purple-200 text-xs flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                      {isDemo ? 'Teste todas as funcionalidades' : 'Controle financeiro automatizado'}
+                    </p>
+                    {companySegment && (
+                      <div className="px-2 py-1 bg-white/20 rounded-lg border border-white/30">
+                        <p className="text-white text-xs font-medium flex items-center gap-1.5">
+                          <Building className="w-3 h-3" />
+                          <span>{companySegment.segment.nome}</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               
@@ -3049,6 +3116,14 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
           <section className="mb-4">
             <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200/50 p-2.5">
               <div className="flex items-center justify-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setShowFirstDayGuide(true)}
+                  className="flex items-center justify-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-all duration-200 text-xs font-medium"
+                  title="Guia rápido de fechamento de caixa"
+                >
+                  <HelpCircle className="w-4 h-4" />
+                  <span>Guia Rápido</span>
+                </button>
                 <button
                   onClick={() => setShowDashboard(true)}
                   className="flex items-center justify-center gap-1.5 bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-all duration-200 text-xs font-medium"
@@ -3667,6 +3742,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                       />
                     </div>
 
+                    {!isFormaPagamentoOculta('cartao_link') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                         Cartão Link
@@ -3843,7 +3919,9 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                         </div>
                       )}
                     </div>
+                    )}
 
+                    {!isFormaPagamentoOculta('boleto') && (
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <label className="block text-sm font-medium text-gray-700 flex items-center">
@@ -4037,6 +4115,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                         </div>
                       )}
                     </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -4227,6 +4306,8 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     </div>
 
                     {/* Seção de Cheques */}
+                    {!isFormaPagamentoOculta('cheque') && (
+                    <>
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <label className="block text-sm font-medium text-gray-700">
@@ -4254,102 +4335,9 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                       </div>
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Taxas <span className="text-xs text-gray-500">(múltiplas taxas)</span>
-                        </label>
-                        <div className="text-xs text-gray-600 flex items-center gap-2">
-                          <span className="font-medium">{formatCurrency(totalTaxas)}</span>
-                          <button type="button" onClick={() => setShowTaxasDetails(v=>!v)} className="px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">
-                            {showTaxasDetails ? 'Recolher' : 'Expandir'}
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {showTaxasDetails && (
-                        <div className="space-y-4">
-                          {/* Formulário para adicionar nova taxa */}
-                          <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                            <h4 className="text-sm font-medium text-gray-700 mb-3">Adicionar Taxa</h4>
-                            <div className="space-y-3">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
-                                  Nome da Taxa
-                                </label>
-                      <input
-                        type="text"
-                                  value={novaTaxaNome}
-                                  onChange={(e) => setNovaTaxaNome(e.target.value)}
-                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                                  placeholder="Ex: Taxa de entrega, Taxa de serviço..."
-                                />
-                              </div>
-                              <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                                  Valor
-                          </label>
-                          <input
-                            type="text"
-                                  value={formatInputValue(novaTaxaValor)}
-                                  onChange={(e) => {
-                                    const numbers = e.target.value.replace(/\D/g, '');
-                                    const cents = numbers === '' ? 0 : parseInt(numbers);
-                                    const reais = cents / 100;
-                                    setNovaTaxaValor(reais);
-                                  }}
-                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                                  placeholder="R$ 0,00"
-                                />
-                              </div>
-                              {novaTaxaNome.trim() && novaTaxaValor > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={adicionarTaxa}
-                                  className="w-full px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-300 text-sm font-medium"
-                                >
-                                  ➕ Adicionar Taxa
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Lista de taxas adicionadas */}
-                          {Array.isArray(entries.taxas) && entries.taxas.length > 0 && (
-                            <div className="space-y-2">
-                              <h4 className="text-sm font-medium text-gray-700">Taxas Registradas:</h4>
-                              {entries.taxas.map((taxa, index) => (
-                                <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
-                                  <div className="flex-1">
-                                    <div className="text-sm font-medium text-gray-800">{taxa.nome}</div>
-                                    <div className="text-sm text-gray-600">
-                                      Valor: {formatCurrency(taxa.valor)}
-                                    </div>
-                                  </div>
-                                  <button
-                                    onClick={() => removerTaxa(index)}
-                                    className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all duration-200 text-sm font-medium"
-                                    title="Remover taxa"
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              ))}
-                              <div className="mt-2 p-2 bg-green-50 rounded-lg border border-green-200">
-                                <div className="text-sm font-medium text-green-800">
-                                  Total de Taxas: {formatCurrency(totalTaxas)}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Seção de detalhes do cheque */}
-                  {showChequesDetails && (
-                  <div className="mt-6 border-t border-gray-200 pt-6">
+                    {/* Seção de detalhes do cheque */}
+                    {showChequesDetails && (
+                    <div className="mt-6 border-t border-gray-200 pt-6">
                       <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                         <div className="w-5 h-5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
                           <span className="text-white text-xs font-bold">📄</span>
@@ -4556,6 +4544,132 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                           ))}
                         </div>
                       )}
+                    </div>
+                    )}
+                    </>
+                    )}
+
+                    {!isFormaPagamentoOculta('taxa') && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Taxas <span className="text-xs text-gray-500">(múltiplas taxas)</span>
+                        </label>
+                        <div className="text-xs text-gray-600 flex items-center gap-2">
+                          <span className="font-medium">{formatCurrency(totalTaxas)}</span>
+                          <button type="button" onClick={() => setShowTaxasDetails(v=>!v)} className="px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">
+                            {showTaxasDetails ? 'Recolher' : 'Expandir'}
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {showTaxasDetails && (
+                        <div className="space-y-4">
+                          {/* Formulário para adicionar nova taxa */}
+                          <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                            <h4 className="text-sm font-medium text-gray-700 mb-3">Adicionar Taxa</h4>
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Nome da Taxa
+                                </label>
+                      <input
+                        type="text"
+                                  value={novaTaxaNome}
+                                  onChange={(e) => setNovaTaxaNome(e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                                  placeholder="Ex: Taxa de entrega, Taxa de serviço..."
+                                />
+                              </div>
+                              <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Valor
+                          </label>
+                          <input
+                            type="text"
+                                  value={formatInputValue(novaTaxaValor)}
+                                  onChange={(e) => {
+                                    const numbers = e.target.value.replace(/\D/g, '');
+                                    const cents = numbers === '' ? 0 : parseInt(numbers);
+                                    const reais = cents / 100;
+                                    setNovaTaxaValor(reais);
+                                  }}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                                  placeholder="R$ 0,00"
+                                />
+                              </div>
+                              {novaTaxaNome.trim() && novaTaxaValor > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={adicionarTaxa}
+                                  className="w-full px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-300 text-sm font-medium"
+                                >
+                                  ➕ Adicionar Taxa
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Lista de taxas adicionadas */}
+                          {Array.isArray(entries.taxas) && entries.taxas.length > 0 && (
+                            <div className="space-y-2">
+                              <h4 className="text-sm font-medium text-gray-700">Taxas Registradas:</h4>
+                              {entries.taxas.map((taxa, index) => (
+                                <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+                                  <div className="flex-1">
+                                    <div className="text-sm font-medium text-gray-800">{taxa.nome}</div>
+                                    <div className="text-sm text-gray-600">
+                                      Valor: {formatCurrency(taxa.valor)}
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => removerTaxa(index)}
+                                    className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all duration-200 text-sm font-medium"
+                                    title="Remover taxa"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ))}
+                              <div className="mt-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                                <div className="text-sm font-medium text-green-800">
+                                  Total de Taxas: {formatCurrency(totalTaxas)}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    )}
+
+                  {/* VR/VA - Vale Refeição e Vale Alimentação - Dentro de ENTRADAS */}
+                  {deveExibirVRVA && (
+                    <div className="mt-6 space-y-4">
+                      <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 text-white p-3 rounded-t-xl">
+                        <h3 className="text-lg font-bold flex items-center gap-2">
+                          <CreditCard className="w-5 h-5" />
+                          Benefícios de Alimentação (VR/VA)
+                        </h3>
+                      </div>
+                      <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200/50 p-4 space-y-4">
+                        <ValeRefeicaoAlimentacaoInput
+                          tipo="VR"
+                          lancamentos={entries.vrLancamentos || []}
+                          onAdd={adicionarVRLancamento}
+                          onRemove={removerVRLancamento}
+                          total={totalVRLancamentos}
+                          enabled={true}
+                        />
+                        <ValeRefeicaoAlimentacaoInput
+                          tipo="VA"
+                          lancamentos={entries.vaLancamentos || []}
+                          onAdd={adicionarVALancamento}
+                          onRemove={removerVALancamento}
+                          total={totalVALancamentos}
+                          enabled={true}
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -5516,6 +5630,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
 
                     </div>
 
+                    {!isFormaPagamentoOculta('correios') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Correios/Frete <span className="text-xs text-gray-500">(múltiplos envios)</span>
@@ -5678,6 +5793,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     </div>
 
                     {/* TRANSPORTADORA */}
+                    {!isFormaPagamentoOculta('transportadora') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Transportadora <span className="text-xs text-gray-500">(envio para destinatário)</span>
@@ -5834,6 +5950,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                         </div>
                       )}
                     </div>
+                    )}
 
                     {/* OUTROS (VALE FUNCIONÁRIO) */}
                     <div>
@@ -5973,6 +6090,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                     </div>
 
                     {/* COMISSÃO PUXADOR */}
+                    {!isFormaPagamentoOculta('comissao_puxador') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Comissão Puxador <span className="text-xs text-gray-500">(4% padrão, alteração somente com PIM)</span>
@@ -6133,6 +6251,7 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
                 </div>
                 )}
@@ -6903,6 +7022,19 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
           </div>
         </div>
       )}
+
+      {/* MODAL OBRIGATÓRIO DE SELEÇÃO DE RAMO */}
+      <BusinessSegmentRequiredModal
+        isOpen={showSegmentRequiredModal}
+        onSegmentSelected={handleSegmentSelected}
+      />
+
+      {/* GUIA PRIMEIRO DIA */}
+      <FirstDayGuide
+        isOpen={showFirstDayGuide}
+        onClose={() => setShowFirstDayGuide(false)}
+        onComplete={() => setShowFirstDayGuide(false)}
+      />
 
       {/* NOTIFICATION */}
       <Notification
@@ -8680,6 +8812,46 @@ function CashFlow({ isDemo = false, onBackToLanding }: CashFlowProps) {
           index={index}
         />
       ))}
+
+      {/* RODAPÉ INSTITUCIONAL */}
+      <footer className="bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 text-white border-t border-purple-500/20 py-4 mt-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
+            <div className="flex flex-col md:flex-row items-center gap-4">
+              <div className="text-center md:text-left">
+                <p className="font-semibold">Webyte Desenvolvimentos LTDA</p>
+                <p className="text-purple-200">CNPJ: 12.345.678/0001-90</p>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600/20 border border-emerald-500/30 rounded-lg">
+                <Shield className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-200">Dados protegidos • Backups automáticos • Conformidade com LGPD</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <a 
+                href="/politica-privacidade" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-purple-200 hover:text-white transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Política de Privacidade</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              <a 
+                href="/termos-uso" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-purple-200 hover:text-white transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Termos de Uso</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        </div>
+      </footer>
 
     </>
   );

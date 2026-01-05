@@ -268,29 +268,21 @@ export interface TimeClockReport {
 
 function getAuthHeaders() {
   // Tentar diferentes chaves possíveis para o token
-  let token: string | null = null;
-  
-  if (typeof window !== 'undefined') {
-    try {
-      token = localStorage.getItem('auth_token') || 
+  let token = localStorage.getItem('auth_token') || 
               localStorage.getItem('token') || 
               localStorage.getItem('authToken') ||
               sessionStorage.getItem('auth_token') ||
               sessionStorage.getItem('token');
-      
-      if (!token) {
-        console.warn('Token de autenticação não encontrado. Verificando localStorage:', {
-          auth_token: localStorage.getItem('auth_token'),
-          token: localStorage.getItem('token'),
-          authToken: localStorage.getItem('authToken'),
-          allKeys: typeof window !== 'undefined' ? Object.keys(localStorage) : [],
-        });
-      } else {
-        console.log('Token encontrado:', token.substring(0, 20) + '...');
-      }
-    } catch (error) {
-      console.warn('Erro ao acessar localStorage:', error);
-    }
+  
+  if (!token) {
+    console.warn('Token de autenticação não encontrado. Verificando localStorage:', {
+      auth_token: localStorage.getItem('auth_token'),
+      token: localStorage.getItem('token'),
+      authToken: localStorage.getItem('authToken'),
+      allKeys: Object.keys(localStorage),
+    });
+  } else {
+    console.log('Token encontrado:', token.substring(0, 20) + '...');
   }
   
   return {
@@ -976,13 +968,7 @@ export const timeClockService = {
     const deletedCount = records.length;
     
     // Limpar todos os registros
-    if (typeof window !== 'undefined' && window.localStorage) {
-      try {
-        localStorage.removeItem('timeclock_records');
-      } catch (error) {
-        console.warn('Erro ao limpar registros do localStorage:', error);
-      }
-    }
+    localStorage.removeItem('timeclock_records');
     
     // Resetar saldo de horas dos funcionários se solicitado
     let resetCount = 0;
@@ -1001,13 +987,7 @@ export const timeClockService = {
     // Limpar QR Codes expirados/usados
     const qrcodes = qrCodeStorage.getAll();
     const activeQRCodes = qrcodes.filter(q => !q.used && new Date(q.expiresAt) > new Date());
-    if (typeof window !== 'undefined' && window.localStorage) {
-      try {
-        localStorage.setItem('timeclock_qrcodes', JSON.stringify(activeQRCodes));
-      } catch (error) {
-        console.warn('Erro ao salvar QR codes no localStorage:', error);
-      }
-    }
+    localStorage.setItem('timeclock_qrcodes', JSON.stringify(activeQRCodes));
     
     return { deletedRecords: deletedCount, resetEmployees: resetCount };
   },

@@ -37,22 +37,11 @@ class LicenseService {
   constructor() {
     // Inicializar como array vazio
     this.licenses = [];
-    // Carregar licenças de forma segura
-    try {
-      this.loadLicenses();
-    } catch (error) {
-      console.error('Erro ao inicializar licenseService:', error);
-      this.licenses = [];
-    }
+    this.loadLicenses();
   }
 
   private loadLicenses() {
     try {
-      // Verificar se localStorage está disponível
-      if (typeof window === 'undefined' || !window.localStorage) {
-        this.licenses = [];
-        return;
-      }
       const stored = localStorage.getItem('ploutos_licenses');
       if (stored) {
         const parsed = JSON.parse(stored);
